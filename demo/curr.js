@@ -1,15 +1,7 @@
-const ath = require('../httpclient/awyhttp');
+const ath = require('/home/wy/node/motoboat/httpclient/awyhttp');
 
-for(var i=0; i<1500; i++) {
-    ath.get('http://localhost:2020/')
-    .then((data, err) => {
-        console.log(data);
-    });
-    ath.post('http://localhost:2020/pt', {
-        data : {
-            a : '123'
-        }
-    })
+for(var i=0; i<5000; i++) {
+    ath.get('http://localhost:2021/')
     .then((data, err) => {
         console.log(data);
     });

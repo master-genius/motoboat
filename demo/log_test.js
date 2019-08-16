@@ -2,29 +2,10 @@ const mt = require('../motoboat');
 
 var app = new mt();
 
-app.config.on_finish = (headers, resheaders, reqinfo) => {
-    console.log(headers);
-    console.log(resheaders);
-    console.log(reqinfo);
-    return ;
-    var log_data = {
-        type    : 'success',
-        method  : headers['method'],
-        link    : '',
-        time    : reqinfo.time,
-        status  : resheaders[':status'],
-        ip      : reqinfo.ip
-    };
-
-    log_data.link = `${headers}`;
-
-    if (log_data.status != 200) {
-        log_data.type = 'error';
-    }
-    if (process.send && typeof process.send === 'function') {
-        process.send(log_data);
-    }
-};
+app.config.log_type = 'file';
+app.config.log_file = '../tmp/access.log';
+app.config.error_log_file = '../tmp/error.log';
+app.config.global_log = true;
 
 var {router} = app;
 
