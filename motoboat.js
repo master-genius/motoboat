@@ -15,7 +15,8 @@ const url = require('url');
 const crypto = require('crypto');
 const cluster = require('cluster');
 const os = require('os');
-const {spawn} = require('child_process');
+const {spawn, exec} = require('child_process');
+const util = require('util');
 
 module.exports = function () {
     
@@ -53,11 +54,9 @@ module.exports = function () {
         auto_options : false,
 
         /**
-         * 设置此选项为请求关闭时的回调函数，
-         * 大部分情况其实不需要此选项，
          * 如果你要更完整的记录请求日志，则需要此选项。
          */
-        on_finish : null,
+        global_log : false,
 
         //自动解析上传的文件数据
         parse_upload    : true,
@@ -79,6 +78,7 @@ module.exports = function () {
 
         debug : true,
 
+        show_load_info : true,
     };
 
     this.limit = {
@@ -94,7 +94,10 @@ module.exports = function () {
     this.rundata = {
         //当前连接数
         cur_conn : 0,
+
+        platform : ''
     };
+    this.rundata.platform = os.platform();
 
     this.helper = {};
 
@@ -147,6 +150,33 @@ module.exports = function () {
                 }
             });
         });
+    };
+
+    /**
+     * 读取/etc/passwd获取用户信息。
+     * 目前没有使用。
+     * */
+    this.helper.getUserInfo = function (username) {
+        try {
+            var matchuser = null;
+            var filedata = fs.readFileSync('/etc/passwd', {encoding:'utf8'});
+            var userlist = filedata.split('\n').filter(u => u.length > 0);
+            var ureg = new RegExp(`^${username}:x`);
+
+            for(var i=0; i<userlist.length; i++) {
+                if (ureg.test(userlist[i])) {
+                    matchuser = userlist[i].split(':').filter(p => p.length>0);
+                    return {
+                        username : username,
+                        uid      : parseInt(matchuser[2]),
+                        gid      : parseInt(matchuser[3])
+                    };
+                }
+            }
+        } catch (err) {
+            return null;
+        }
+        return null;
     };
 
     //请求上下文
@@ -758,6 +788,28 @@ module.exports = function () {
         }
     };
 
+    this.sendReqLog = function (headers, rinfo) {
+        var log_data = {
+            type    : 'log',
+            success : true,
+            method  : headers.method,
+            link    : `${the.config.https_on?'https://':'http://'}${headers['host']}${rinfo.path}`,
+            time    : (new Date()).toLocaleString("zh-Hans-CN"),
+            status  : rinfo.status,
+            ip      : rinfo.ip
+        };
+        if (headers['x-real-ip']) {
+            log_data.ip = headers['x-real-ip'];
+        }
+    
+        if (log_data.status != 200) {
+            log_data.success = false;
+        }
+        if (process.send && typeof process.send === 'function') {
+            process.send(log_data);
+        }
+    };
+
     /**
      * 请求执行回调函数，传递参数和Node.js的HTTP模块描述一致。
      * 
@@ -772,22 +824,19 @@ module.exports = function () {
         });
 
         var remote_ip = req.socket.remoteAddress;
-        var requrl = req.url;
-        if (typeof the.config.on_finish === 'function') {
+        if (the.config.global_log && cluster.isWorker) {
             res.on('finish', () => {
-                var resinfo = res.getHeaders();
-                resinfo.status = res.statusCode;
-                the.config.on_finish(req.headers, resinfo, {
-                    time : (new Date()).toLocaleString("zh-Hans-CN"),
-                    ip   : remote_ip,
-                    path : requrl
+                the.sendReqLog(req.headers, {
+                    status : res.statusCode,
+                    ip : remote_ip,
+                    path : req.url
                 });
             });
         }
 
         if (the.methodList.indexOf(req.method) < 0) {
             res.statusCode = 405;
-            res.setHeader('Allow', ['GET','POST', 'PUT', 'DELETE', 'OPTIONS']);
+            res.setHeader('Allow', the.methodList);
             res.end('Method not allowed');
             return ;
         }
@@ -1005,27 +1054,20 @@ module.exports = function () {
                     则把输出流重定向到文件。
                     但是在子进程处理请求仍然可以输出到终端。
                 */
+                var logger = null;
                 if (the.config.log_type == 'file') {
-                    if(typeof the.config.log_file === 'string'
-                        && the.config.log_file.length > 0
-                    ) {
-                        var out_log = fs.createWriteStream(
-                            the.config.log_file, 
-                            {flags : 'a+' }
-                          );
-                        process.stdout.write = out_log.write.bind(out_log);
-                    }
-                    if(typeof the.config.error_log_file === 'string'
-                        && the.config.error_log_file.length > 0
-                    ) {
-                        var err_log = fs.createWriteStream(
-                            the.config.error_log_file, 
-                            {flags : 'a+' }
-                          );
-                        process.stderr.write = err_log.write.bind(err_log);
-                    }
+                    var out_log = fs.createWriteStream(
+                        the.config.log_file, 
+                        {flags : 'a+' }
+                      );
+                    var err_log = fs.createWriteStream(
+                        the.config.error_log_file, 
+                        {flags : 'a+' }
+                      );
+                    logger = new console.Console({stdout:out_log, stderr: err_log}); 
+                } else if (the.config.log_type == 'stdio') {
+                    logger = new console.Console();
                 }
-
                 /*
                     检测子进程数量，如果有子进程退出则fork出差值的子进程，
                     维持在一个恒定的值。
@@ -1035,21 +1077,81 @@ module.exports = function () {
                     for(var i=0; i<num_dis; i++) {
                         cluster.fork();
                     }
-                }, 2500);
+                }, 2000);
+                
+                var loadInfo = [];
+
+                var showLoadInfo = function (w) {
+                    var total = Object.keys(cluster.workers).length;
+                    if (loadInfo.length == total) {
+                        loadInfo.sort((a, b) => {
+                            if (a.pid < b.pid) {
+                                return -1;
+                            } else if (a.pid > b.pid) {
+                                return 1;
+                            }
+                            return 0;
+                        });
+                        console.clear();
+                        var oavg = os.loadavg();
+                        console.log('  CPU Loadavg  1m: %s  5m: %s  15m: %s', 
+                            oavg[0].toFixed(2), 
+                            oavg[1].toFixed(2), 
+                            oavg[2].toFixed(2)
+                        );
+                        console.log('  PID       CPU       MEM       CONN');
+                        var tmp = '';
+                        var ct = '';
+                        for(let i=0; i<loadInfo.length; i++) {
+                            tmp = (loadInfo[i].pid).toString() + '          ';
+                            tmp = tmp.substring(0, 10);
+                            t = loadInfo[i].cpu.user+loadInfo[i].cpu.system;
+                            t = (t/11000).toFixed(2);
+                            tmp += t + '%       ';
+                            tmp = tmp.substring(0, 20);
+                            tmp += (loadInfo[i].mem.rss / (1024*1024)).toFixed(2);
+                            tmp += 'M         ';
+                            tmp = tmp.substring(0, 30);
+                            tmp += loadInfo[i].conn.toString();
+                            console.log(`  ${tmp}`);
+                        }
+                        console.log(`  Master PID: ${process.pid}`);
+                        loadInfo = [w];
+                    } else {
+                        loadInfo.push(w);
+                    }
+                };
 
                 cluster.on('message', (worker, message, handle) => {
                     try {
-                        if(message.type === 'access') {
-                            console.log(JSON.stringify(message));
-                        } else {
-                            console.error(JSON.stringify(message));
+                        if(message.type == 'log' && message.success) {
+                            logger.log(JSON.stringify(message));
+                        } else if (message.type == 'log' && !message.success) {
+                            logger.error(JSON.stringify(message));
                         }
-                    } catch (err) {
-                    }
+
+                        if (message.type == 'load') {
+                            showLoadInfo(message);
+                        }
+                    } catch (err) {}
                 });
             }
         } else if (cluster.isWorker) {
             this.run(port, host);
+            if (the.config.show_load_info) {
+                var cpuLast = {user: 0, system: 0};
+                setInterval(() => {
+                    cpuTime = process.cpuUsage(cpuLast);
+                    process.send({
+                        type : 'load',
+                        pid  : process.pid,
+                        cpu  : cpuTime,
+                        mem  : process.memoryUsage(),
+                        conn : the.rundata.cur_conn
+                    });
+                    cpuLast = process.cpuUsage();
+                }, 1100);
+            }
         }
     };
 };
