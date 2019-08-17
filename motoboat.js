@@ -1,9 +1,9 @@
 /**
- * motoboat 1.4.1
+ * motoboat 1.4.2
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
- * See the Mulan PSL v1 for more details:
+ * See the MPL for more details:
  *     https://www.mozilla.org/en-US/MPL/2.0/
  */
 
@@ -1080,7 +1080,6 @@ module.exports = function () {
                 }, 2000);
                 
                 var loadInfo = [];
-
                 var showLoadInfo = function (w) {
                     var total = Object.keys(cluster.workers).length;
                     if (loadInfo.length == total) {
@@ -1092,30 +1091,39 @@ module.exports = function () {
                             }
                             return 0;
                         });
-                        console.clear();
+                        if (!the.config.daemon) {
+                            console.clear();
+                        }
                         var oavg = os.loadavg();
-                        console.log('  CPU Loadavg  1m: %s  5m: %s  15m: %s', 
-                            oavg[0].toFixed(2), 
-                            oavg[1].toFixed(2), 
-                            oavg[2].toFixed(2)
-                        );
-                        console.log('  PID       CPU       MEM       CONN');
+
+                        var oscpu = `  CPU Loadavg  1m: ${oavg[0].toFixed(2)}  5m: ${oavg[1].toFixed(2)}  15m: ${oavg[2].toFixed(2)}\n`;
+                        
+                        var cols = '  PID       CPU       MEM       CONN\n';
                         var tmp = '';
-                        var ct = '';
+                        var t = '';
                         for(let i=0; i<loadInfo.length; i++) {
                             tmp = (loadInfo[i].pid).toString() + '          ';
                             tmp = tmp.substring(0, 10);
                             t = loadInfo[i].cpu.user+loadInfo[i].cpu.system;
-                            t = (t/11000).toFixed(2);
+                            t = (t/12800).toFixed(2);
                             tmp += t + '%       ';
                             tmp = tmp.substring(0, 20);
                             tmp += (loadInfo[i].mem.rss / (1024*1024)).toFixed(2);
                             tmp += 'M         ';
                             tmp = tmp.substring(0, 30);
                             tmp += loadInfo[i].conn.toString();
-                            console.log(`  ${tmp}`);
+                            cols += `  ${tmp}\n`;
                         }
-                        console.log(`  Master PID: ${process.pid}`);
+                        cols += `  Master PID: ${process.pid}\n`;
+                        if (the.config.daemon) {
+                            try {
+                                fs.writeFileSync('./load-info.log',
+                                    oscpu+cols, {encoding:'utf8'}
+                                );
+                            } catch (err) {}
+                        } else {
+                            console.log(oscpu+cols);
+                        }
                         loadInfo = [w];
                     } else {
                         loadInfo.push(w);
@@ -1150,7 +1158,7 @@ module.exports = function () {
                         conn : the.rundata.cur_conn
                     });
                     cpuLast = process.cpuUsage();
-                }, 1100);
+                }, 1280);
             }
         }
     };
