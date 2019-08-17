@@ -33,4 +33,8 @@ router.post('/p', async rr => {
     rr.res.data = rr.bodyparam;
 });
 
+if (process.argv.length >= 3 && process.argv[2] == '-d') {
+    app.config.daemon = true;
+}
+
 app.daemon(2021);
