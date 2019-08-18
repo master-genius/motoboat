@@ -1,3 +1,6 @@
+
+![-](images/motoboat-test.png)
+
 # motoboat
 
 基于Node.js的Web框架，使用async/await关键字解决回调地狱。
