@@ -1,5 +1,5 @@
 /**
- * motoboat 1.4.4
+ * motoboat 1.4.5
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -490,7 +490,9 @@ motoboat.prototype.context = function () {
         return ctx.files[name][ind];
     };
 
-    ctx.setHeader = {};
+    ctx.setHeader = function (name, val) {
+        ctx.response.setHeader(name, val);
+    };
 
     ctx.res.write = function(data) {
         if (typeof data === 'string') {
@@ -796,20 +798,20 @@ motoboat.prototype.sendReqLog = function (headers, rinfo) {
     这个中间件最先执行，所以最后会返回响应结果。
 */
 motoboat.prototype.addFinalResponse = function () {
-    var fr = async function(rr, next) {
-        if (!rr.response.getHeader('content-type')) {
-            rr.response.setHeader('content-type', 'text/html;charset=utf8');
+    var fr = async function(ctx, next) {
+        if (!ctx.response.getHeader('content-type')) {
+            ctx.response.setHeader('content-type', 'text/html;charset=utf8');
         }
-        await next(rr);
+        await next(ctx);
 
-        if (rr.res.data === null || rr.res.data === false) {
-            rr.response.end();
-        } else if (typeof rr.res.data === 'object') {
-            rr.response.end(JSON.stringify(rr.res.data));
-        } else if (typeof rr.res.data === 'string') {
-            rr.response.end(rr.res.data, 'binary');
+        if (ctx.res.data === null || ctx.res.data === false) {
+            ctx.response.end();
+        } else if (typeof ctx.res.data === 'object') {
+            ctx.response.end(JSON.stringify(ctx.res.data));
+        } else if (typeof ctx.res.data === 'string') {
+            ctx.response.end(ctx.res.data, 'binary');
         } else {
-            rr.response.end();
+            ctx.response.end();
         }
     };
     this.add(fr);
@@ -877,7 +879,6 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         ctx.routepath = real_path.key;
         ctx.args = real_path.args;
         ctx.param = urlobj.query;
-        ctx.setHeader = res.setHeader;
         /*
          跨域资源共享标准新增了一组HTTP首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
          并且规范要求，对那些可能会对服务器资源产生改变的请求方法，
