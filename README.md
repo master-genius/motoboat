@@ -1,5 +1,5 @@
 
-![-](images/motoboat-test.png)
+![-](images/motoboat_test.png)
 
 # motoboat
 
