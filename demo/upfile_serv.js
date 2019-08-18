@@ -18,7 +18,7 @@ aserv.add(async (rr, next) => {
         default:
             rr.res.data = `${fty} : file type not allowed`;
     }
-}, '/upload');
+}, {preg : '/upload'});
 
 //针对/upload2路由的中间件，单文件上传检测文件大小不能超过2M。
 aserv.add(async (rr, next) => {
@@ -29,7 +29,7 @@ aserv.add(async (rr, next) => {
         await next(rr);
     }
 
-}, '/upload');
+}, {preg: '/upload'});
 
 //检测文件是否存在
 aserv.add(async (rr, next) => {
@@ -75,4 +75,4 @@ router.post('/upload', async rr => {
     }
 });
 
-var h = aserv.run(2020);
+aserv.run(2020);

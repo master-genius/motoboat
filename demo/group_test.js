@@ -26,10 +26,10 @@ api.get('/xyz', async rr => {
 });
 
 
-api.add(async (rr, next) => {
+ant.add(async (rr, next) => {
     console.log('api say : helo');
     await next(rr);
-});
+}, api.groupName);
 
 ant.add(async (rr, next) => {
     console.log('global: hey');
@@ -45,10 +45,10 @@ router.options('/*', async rr => {
     console.log('options');
 });
 
-api.add(async (rr, next) => {
+ant.add(async (rr, next) => {
     console.log('route match : ' + rr.routepath);
     await next(rr);
-}, /xy/i);
+}, {preg : /xy/i, group: api.groupName});
 
 api.get('a/:c/x', async rr => {
     rr.res.data = rr.args;
@@ -57,12 +57,6 @@ api.get('a/:c/x', async rr => {
 router.get('x/y/', async rr => {
     rr.res.data = `${rr.path}\n${rr.routepath}`;
 });
-
-console.log(ant.api_group_table);
-
-console.log(ant.ApiTable);
-
-console.log(ant.mid_group);
 
 //支持IPv6地址
 ant.run(8098, '::');

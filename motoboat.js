@@ -1,5 +1,5 @@
 /**
- * motoboat 1.4.6
+ * motoboat 1.5.0
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -13,15 +13,27 @@ const qs = require('querystring');
 const http = require('http');
 const https = require('https');
 const url = require('url');
-const crypto = require('crypto');
 const cluster = require('cluster');
 const os = require('os');
-const {spawn, exec} = require('child_process');
-const util = require('util');
+const {spawn} = require('child_process');
+//const util = require('util');
+//const crypto = require('crypto');
 
-var motoboat = function () {
+const bodyParser = require('./bodyparser');
+const middleware = require('./middleware');
+const router = require('./router');
+const helper = require('./helper');
+
+/**
+ * 
+ * @param {object} options 初始化选项，参考值如下：
+ * - ignoreSlash，忽略末尾的/，默认为true
+ * - debug 调试模式，默认为true
+ */
+var motoboat = function (options = {}) {
     if (!(this instanceof motoboat)) {return new motoboat(); }
-    var the = this;
+    //var the = this;
+
     this.config = {
         //此配置表示POST/PUT提交表单的最大字节数，也是上传文件的最大限制，
         body_max_size   : 8000000,
@@ -74,15 +86,16 @@ var motoboat = function () {
         //设置服务器超时，毫秒单位，在具体的请求中，可以通过stream设置具体请求的超时时间
         timeout : 20000,
 
-        //路径最后的/有没有都认为是同一路径，设置true则会在添加路径的时候去掉末尾的/
-        ignore_slash : true,
-
         page_404 : 'page not found',
 
-        debug : true,
-
         show_load_info : true,
+
+        debug : true,
     };
+
+    if (options.debug !== undefined) {
+        this.config.debug = options.debug;
+    }
 
     this.limit = {
         /**
@@ -97,346 +110,24 @@ var motoboat = function () {
     this.rundata = {
         //当前连接数
         cur_conn : 0,
-
-        platform : ''
-    };
-    this.rundata.platform = os.platform();
-
-    this.helper = {};
-
-    /**
-     * @param {string} filename 文件名称
-     */
-    this.helper.extName = function (filename) {
-        if (filename.indexOf(".") < 0) {
-            return '';
-        }
-        var name_slice = filename.split('.');
-        if (name_slice.length <= 0) {
-            return '';
-        }
-        return '.' + name_slice[name_slice.length-1];
+        platform : os.platform()
     };
 
-    /**
-     * @param {string} filename 文件名称
-     * @param {string} pre_str 前缀字符串
-     */
-    this.helper.genFileName = function(filename, pre_str='') {
-        var org_name = `${pre_str}${Date.now()}`;
-        var hash = crypto.createHash('sha1');
-        hash.update(org_name);
-        return hash.digest('hex') + the.helper.extName(filename);
-    };
-    
-    /**
-     * @param {object} upf 通过getFile获取的文件对象
-     * @param {options} 选项，包括target(目标文件名)和path(目标目录)
-     */
-    this.helper.moveFile = function (upf, options) {
-        if (!options.filename) {
-            options.filename = the.helper.genFileName(upf.filename);
-        }
-
-        var target = options.path + '/' + options.filename;
-        
-        return new Promise((rv, rj) => {
-            fs.writeFile(target, upf.data, {encoding : 'binary'}, err => {
-                if (err) {
-                    rj(err);
-                } else {
-                    rv({
-                        filename : options.filename,
-                        target : target,
-                        oldname : upf.filename
-                    });
-                }
-            });
-        });
-    };
-
-    /**
-     * 读取/etc/passwd获取用户信息。
-     * 目前没有使用。
-     * */
-    this.helper.getUserInfo = function (username) {
-        try {
-            var matchuser = null;
-            var filedata = fs.readFileSync('/etc/passwd', {encoding:'utf8'});
-            var userlist = filedata.split('\n').filter(u => u.length > 0);
-            var ureg = new RegExp(`^${username}:x`);
-
-            for(var i=0; i<userlist.length; i++) {
-                if (ureg.test(userlist[i])) {
-                    matchuser = userlist[i].split(':').filter(p => p.length>0);
-                    return {
-                        username : username,
-                        uid      : parseInt(matchuser[2]),
-                        gid      : parseInt(matchuser[3])
-                    };
-                }
-            }
-        } catch (err) {
-            return null;
-        }
-        return null;
-    };
+    //用于匹配content-type确定是不是上传文件。
+    this.pregUpload = /multipart.* boundary.*=/i;
 
     this.methodList = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
-
-    this.ApiTable = {
-        'GET'   : {},
-        'POST'  : {},
-        'PUT'   : {},
-        'DELETE': {},
-        'OPTIONS': {}
-    };
-
-    this.router = {};
+    this.helper = helper;
+    this.parseUploadData = bodyParser.parseUploadData;
+    this.parseSingleFile = bodyParser.parseSingleFile;
     
-    this.router.get = (api_path, callback, name='') => {
-        the.addPath(api_path, 'GET', callback, name);
-    };
+    this.middleware = middleware(options);
+    this.add = this.middleware.add;
+    this.runMiddleware = this.middleware.runMiddleware;
+    this.addFinalResponse = this.middleware.addFinalResponse;
 
-    this.router.post = (api_path, callback, name='') => {
-        the.addPath(api_path, 'POST', callback, name);
-    };
-
-    this.router.put = (api_path, callback, name='') => {
-        the.addPath(api_path, 'PUT', callback, name);
-    };
-
-    this.router.delete = (api_path, callback, name='') => {
-        the.addPath(api_path, 'DELETE', callback, name);
-    };
-
-    this.router.options = (api_path, callback, name = '') => {
-        the.addPath(api_path, 'OPTIONS', callback, name);
-    };
-
-    this.router.any = (api_path, callback, name='') => {
-        the.router.map(the.methodList, api_path, callback, name);
-    };
-
-    this.router.map = (marr, api_path, callback, name='') => {
-        for(var i=0; i<marr.length; i++) {
-            the.addPath(api_path, marr[i], callback, name);
-        }
-    };
-    
-    /*
-        由于在路由匹配时会使用/分割路径，所以在添加路由时先处理好。
-        允许:表示变量，*表示任何路由，但是二者不能共存，因为无法知道后面的是变量还是路由。
-        比如：/static/*可以作为静态文件所在目录，但是后面的就直接作为*表示的路径，
-        并不进行参数解析。
-    */
-    /**
-     * @param {string} api_path 路由字符串
-     * @param {string} method 请求方法类型
-     * @param {function} callback 执行请求的回调函数
-     * @param {string} name 请求名称，可以不填写
-     */
-    this.addPath = function(api_path, method, callback, name = '') {
-        if (api_path[0] !== '/') {
-            api_path = `/${api_path}`;
-        }
-
-        if (api_path.length > 1
-            && api_path[api_path.length-1] == '/'
-            && the.config.ignore_slash
-        ) {
-            api_path = api_path.substring(0, api_path.length-1);
-        }
-
-        var add_req = {
-                isArgs:  false,
-                isStar:  false,
-                routeArr: [],
-                ReqCall: callback,
-                name : name
-            };
-        if (api_path.indexOf(':') >= 0) {
-            add_req.isArgs = true;
-        }
-        if (api_path.indexOf('*') >= 0) {
-            add_req.isStar = true;
-        }
-
-        if (add_req.isStar 
-            && add_req.isArgs
-        ) {
-            var errinfo = `: * can not in two places at once ->  ${api_path}`;
-            throw new Error(errinfo);
-        }
-
-        add_req.routeArr = api_path.split('/').filter(p => p.length > 0);
-
-        switch (method) {
-            case 'GET':
-            case 'POST':
-            case 'PUT':
-            case 'DELETE':
-            case 'OPTIONS':
-                if (this.ApiTable[method][api_path]) {
-                    throw new Error(`${api_path} conflict`);
-                }
-                this.ApiTable[method][api_path] = add_req;
-                break;
-            default:
-                return ;
-        }
-
-    };
-
-    this.mid_chain = [
-        async function(ctx) {
-            return ;
-        },
-
-        async function(rr, next) {
-            if (typeof rr.requestCall === 'function'
-                && rr.requestCall.constructor.name === 'AsyncFunction'
-            ) {
-                await rr.requestCall(rr);
-            }
-            return rr;
-        }
-    ];
-
-    /*
-        支持路由分组的解决方案（不改变已有代码即可使用）：
-    */
-    this.mid_group = {
-        '*global*' : [this.mid_chain[0], this.mid_chain[1]]
-    };
-
-    //记录api的分组，只有在分组内的路径才会去处理，
-    //这是为了避免不是通过分组添加但是仍然使用和分组相同前缀的路由也被当作分组内路由处理。
-    this.api_group_table = {};
-    
-    /*
-        添加中间件，第三个参数表示分组。
-    */
-    this.add = function(midcall, preg = null, group = null) {
-        /*
-            直接跳转下层中间件，根据匹配规则如果不匹配则执行此函数。
-        */
-        var genRealCall = function(prev_mid, group) {
-            return async function(rr) {
-                if (preg) {
-                    if (
-                        (typeof preg === 'string' && preg !== rr.routepath)
-                        ||
-                        (preg instanceof RegExp && !preg.test(rr.routepath))
-                        ||
-                        (preg instanceof Array && preg.indexOf(rr.routepath) < 0)
-                    ) {
-                        await the.mid_group[group][prev_mid](rr);
-                        return rr;
-                    }
-                }
-                await midcall(rr, the.mid_group[group][prev_mid]);
-                return rr;
-            };
-        
-        };
-
-        var last = 0;
-        if (group) {
-            if (!the.mid_group[group]) {
-                the.mid_group[group] = [the.mid_chain[0], the.mid_chain[1]];
-            }
-            last = the.mid_group[group].length - 1;
-            the.mid_group[group].push(genRealCall(last, group));
-        } else {
-            //全局添加中间件
-            for(var k in the.mid_group) {
-                last = the.mid_group[k].length - 1;
-                the.mid_group[k].push(genRealCall(last, k));
-            }
-        }
-    };
-    
-    this.router.add = the.add;
-
-    /**
-     * 返回一个分组路由对象，主要便于路由分组操作
-     * @param {string} grp 分组名称
-     */
-    this.group = function (grp) {
-        if (grp == '' || grp[0] !== '/') {
-            grp = `/${grp}`;
-        }
-        if (grp.length > 0 && grp[grp.length-1] == '/' && grp!=='/') {
-            grp = grp.substring(0, grp.length-1);
-        }
-
-        var gt = {
-            group_name : grp
-        };
-
-        gt.realPath = function (apath) {
-            if (apath == '/' && the.config.ignore_slash) {
-                return gt.group_name;
-            }
-            if (apath[0]!=='/') {
-                if (gt.group_name!=='/') {
-                    return `${gt.group_name}/${apath}`;
-                } else {
-                    return `${gt.group_name}${apath}`;
-                }
-            } else {
-                if (gt.group_name!=='/') {
-                    return `${gt.group_name}${apath}`;
-                } else {
-                    return apath;
-                }
-            }
-        };
-
-        gt.add_group_api = (apath) => {
-            if (!the.api_group_table[gt.group_name]) {
-                the.api_group_table[gt.group_name] = {};
-            }
-            the.api_group_table[gt.group_name][gt.realPath(apath)] = apath;
-        };
-
-        gt.get = function(apath, callback, name='') {
-            gt.add_group_api(apath);
-            the.router.get(gt.realPath(apath), callback, name);
-        };
-
-        gt.post = function(apath, callback, name='') {
-            gt.add_group_api(apath);
-            the.router.post(gt.realPath(apath), callback, name);
-        };
-
-        gt.delete = function(apath, callback, name='') {
-            gt.add_group_api(apath);
-            the.router.delete(gt.realPath(apath), callback, name);
-        };
-
-        gt.options = function(apath, callback, name='') {
-            t.add_group_api(apath);
-            the.router.options(gt.realPath(apath), callback, name);
-        };
-
-        gt.any = function(apath, callback, name='') {
-            gt.add_group_api(apath);
-            the.router.any(gt.realPath(apath), callback, name);
-        };
-
-        gt.map = function(marr, apath, callback, name='') {
-            gt.add_group_api(apath);
-            the.router.map(marr, gt.realPath(apath), callback, name);
-        };
-
-        gt.add = function(midcall, preg = null) {
-            the.add(midcall, preg, gt.group_name);
-        };
-        
-        return gt;
-    };
+    this.router = router(options);
+    this.group = this.router.group;
 
 };
 
@@ -515,93 +206,6 @@ motoboat.prototype.context = function () {
     return ctx;
 };
 
-motoboat.prototype.findPath = function(path, method) {
-    if (!this.ApiTable[method]) {
-        return null;
-    }
-    if (path.length > 2042) {
-        return null;
-    }
-    var path_split = path.split('/');
-    path_split = path_split.filter(p => p.length > 0);
-    if (path_split.length > 9) {
-        return null;
-    }
-
-    var next = 0;
-    var args = {};
-    var rt = null;
-    for (var k in this.ApiTable[method]) {
-        rt = this.ApiTable[method][k];
-        if (rt.isArgs === false && rt.isStar === false) {
-            continue;
-        }
-
-        if (
-          (rt.routeArr.length !== path_split.length && rt.isStar === false)
-          ||
-          (rt.isStar && rt.routeArr.length > path_split.length+1)
-        ) {
-            continue;
-        }
-
-        next = false;
-        args = {};
-        
-        if (rt.isStar) {
-            for(var i=0; i<rt.routeArr.length; i++) {
-                if (rt.routeArr[i] == '*') {
-                    args.starPath = path_split.slice(i).join('/');
-                } else if(rt.routeArr[i] !== path_split[i]) {
-                    next = true;
-                    break;
-                }
-            }
-        } else {
-            for(var i=0; i<rt.routeArr.length; i++) {
-                if (rt.routeArr[i][0] == ':') {
-                    args[rt.routeArr[i].substring(1)] = path_split[i];
-                } else if (rt.routeArr[i] !== path_split[i]) {
-                    next = true;
-                    break;
-                }
-            }
-        }
-
-        if (next) {continue;}
-
-        return {key: k, args: args};
-    }
-
-    return null;
-};
-
-motoboat.prototype.findRealPath = function(path, method) {
-    var route_path = null;
-    if (path.length > 1
-        && path[path.length-1] == '/'
-        && this.config.ignore_slash
-    ) {
-        path = path.substring(0, path.length-1);
-    }
-
-    if (this.ApiTable[method][path] !== undefined) {
-        route_path = path;
-    }
-
-    if (route_path && route_path.indexOf('/:') >= 0) {
-        route_path = null;
-    }
-
-    var parg = null;
-    if (route_path === null) {
-        parg = this.findPath(path, method);
-    } else {
-        parg = {args : {}, key: route_path};
-    }
-    return parg;
-};
-
 /**
  * 执行请求的包装方法，会根据请求上下文信息查找路由表，确定是否可执行。
  * 如果是上传文件，并且开启了自动解析选项，则会解析文件数据。
@@ -609,17 +213,6 @@ motoboat.prototype.findRealPath = function(path, method) {
  * @param {object} ctx 请求上下文实例。
  */
 motoboat.prototype.execRequest = function (ctx) {
-    var r = this.ApiTable[ctx.method][ctx.routepath];
-    ctx.requestCall = r.ReqCall;
-    //用于分组检测
-    ctx.group = '/' + r.routeArr[0];
-    if (!this.api_group_table[ctx.group] 
-        || !this.api_group_table[ctx.group][ctx.routepath]
-    ) {
-        ctx.group = '';
-    }
-    ctx.name = r.name;
-
     if ((ctx.method == 'POST' || ctx.method == 'PUT' || ctx.method == 'DELETE') 
         && !ctx.isUpload && ctx.rawBody.length > 0
     ) {
@@ -636,31 +229,10 @@ motoboat.prototype.execRequest = function (ctx) {
         }
     }
     else if (ctx.isUpload && this.config.parse_upload) {
-        this.parseUploadData(ctx);
+        this.parseUploadData(ctx, this.config.max_files);
     }
     
     return this.runMiddleware(ctx);
-};
-
-/**
- * 执行中间件，其中核心则是请求回调函数。
- * @param {object} ctx 请求上下文实例。
- */
-motoboat.prototype.runMiddleware = async function (ctx) {
-    try {
-        var group = '*global*';
-        if (ctx.group !== '') {
-            group = ctx.group;
-        }
-        var last = this.mid_group[group].length-1;
-        await this.mid_group[group][last](ctx, this.mid_group[group][last-1]);
-    } catch (err) {
-        if (this.config.debug) {
-            console.log(err);
-        }
-        ctx.res.status(500);
-        ctx.response.end();
-    }
 };
 
 /*
@@ -668,109 +240,17 @@ motoboat.prototype.runMiddleware = async function (ctx) {
     multipart/byteranges不支持
 */
 motoboat.prototype.checkUploadHeader = function(headerstr) {
-    var preg = /multipart.* boundary.*=/i;
-    if (preg.test(headerstr)) {
+    if (this.pregUpload.test(headerstr)) {
         return true;
     }
     return false;
 };
 
-/*
-    解析上传文件数据的函数，此函数解析的是整体的文件，
-    解析过程参照HTTP/1.1协议。
-*/
-motoboat.prototype.parseUploadData = function(ctx) {
-    var bdy = ctx.headers['content-type'].split('=')[1];
-    bdy = bdy.trim();
-    bdy = `--${bdy}`;
-    //var end_bdy = bdy + '--';
-
-    var bdy_crlf = `${bdy}\r\n`;
-    var crlf_bdy = `\r\n${bdy}`;
-
-    var file_end = 0;
-    var file_start = 0;
-
-    file_start = ctx.rawBody.indexOf(bdy_crlf);
-    if (file_start < 0) {
-        return ;
-    }
-    file_start += bdy_crlf.length;
-    var end_break = (this.config.max_files > 0) ? this.config.max_files : 15;
-    var i=0; //保证不出现死循环或恶意数据产生大量无意义循环
-    while(i < end_break) {
-        file_end = ctx.rawBody.indexOf(crlf_bdy, file_start);
-        if (file_end <= 0) { break; }
-
-        this.parseSingleFile(ctx, file_start, file_end);
-        file_start = file_end + bdy_crlf.length;
-        i++;
-    }
-    ctx.rawBody = '';
-};
-
-//解析单个文件数据
-motoboat.prototype.parseSingleFile = function(ctx, start_ind, end_ind) {
-    var header_end_ind = ctx.rawBody.indexOf('\r\n\r\n',start_ind);
-
-    var header_data = Buffer.from(
-            ctx.rawBody.substring(start_ind, header_end_ind), 
-            'binary'
-        ).toString('utf8');
-    
-    var file_post = {
-        filename        : '',
-        'content-type'  : '',
-        data            : '',
-    };
-    
-    file_post.data = ctx.rawBody.substring(header_end_ind+4, end_ind);
-
-    //parse header
-    if (header_data.search("Content-Type") < 0) {
-        //post form data, not file data
-        var form_list = header_data.split(";");
-        var tmp;
-        for(var i=0; i<form_list.length; i++) {
-            tmp = form_list[i].trim();
-            if (tmp.search("name=") > -1) {
-                var name = tmp.split("=")[1].trim();
-                name = name.substring(1, name.length-1);
-                ctx.bodyparam[name] = Buffer.from(file_post.data, 'binary').toString('utf8');
-                break;
-            }
-        }
-    } else {
-        //file data
-        var form_list = header_data.split("\r\n").filter(s => s.length > 0);
-        var tmp_name = form_list[0].split(";");
-
-        var name = '';
-        for (var i=0; i<tmp_name.length; i++) {
-            if (tmp_name[i].search("filename=") > -1) {
-                file_post.filename = tmp_name[i].split("=")[1].trim();
-                file_post.filename = file_post.filename.substring(1, file_post.filename.length-1);
-            } else if (tmp_name[i].search("name=") > -1) {
-                name = tmp_name[i].split("=")[1].trim();
-                name = name.substring(1, name.length-1);
-            }
-        }
-
-        if (name == '') {
-            file_post.data = '';
-            return ;
-        }
-
-        file_post['content-type'] = form_list[1].split(":")[1].trim();
-        
-        if (ctx.files[name] === undefined) {
-            ctx.files[name] = [file_post];
-        } else {
-            ctx.files[name].push(file_post);
-        }
-    }
-};
-
+/**
+ * 发送日志消息，此函数只能在worker进程中调用。
+ * @param {object} headers
+ * @param {object} rinfo
+ */
 motoboat.prototype.sendReqLog = function (headers, rinfo) {
     var log_data = {
         type    : 'log',
@@ -793,30 +273,6 @@ motoboat.prototype.sendReqLog = function (headers, rinfo) {
     }
 };
 
-/*
-    这是最终添加的请求中间件。基于洋葱模型，
-    这个中间件最先执行，所以最后会返回响应结果。
-*/
-motoboat.prototype.addFinalResponse = function () {
-    var fr = async function(ctx, next) {
-        if (!ctx.response.getHeader('content-type')) {
-            ctx.response.setHeader('content-type', 'text/html;charset=utf8');
-        }
-        await next(ctx);
-
-        if (ctx.res.data === null || ctx.res.data === false) {
-            ctx.response.end();
-        } else if (typeof ctx.res.data === 'object') {
-            ctx.response.end(JSON.stringify(ctx.res.data));
-        } else if (typeof ctx.res.data === 'string') {
-            ctx.response.end(ctx.res.data, ctx.res.encoding);
-        } else {
-            ctx.response.end();
-        }
-    };
-    this.add(fr);
-};
-
 /**
  * 开始监听请求，此函数根据配置等信息做处理后调用listen
  * @param {number} port 端口
@@ -825,7 +281,6 @@ motoboat.prototype.addFinalResponse = function () {
 motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     this.addFinalResponse();
     var the = this;
-
     var onRequest = (req, res) => {
         req.on('abort', (err) => {res.statusCode = 400; res.end();});
         req.on('error', (err) => {
@@ -853,12 +308,10 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         }
 
         var urlobj = url.parse(req.url, true);
-        if (urlobj.pathname == '') {
-            urlobj.pathname = '/';
-        }
+        if (urlobj.pathname == '') { urlobj.pathname = '/'; }
 
         var real_path = '';
-        real_path = the.findRealPath(urlobj.pathname, req.method);
+        real_path = the.router.findRealPath(urlobj.pathname, req.method);
         if (real_path === null) {
             res.statusCode = 404;
             res.end(the.config.page_404);
@@ -876,9 +329,9 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         ctx.response = res;
         ctx.headers = req.headers;
         ctx.path = urlobj.pathname;
-        ctx.routepath = real_path.key;
-        ctx.args = real_path.args;
+        //ctx.routepath = real_path.key; ctx.args = real_path.args;
         ctx.param = urlobj.query;
+        the.router.setContext(real_path, ctx);
         /*
          跨域资源共享标准新增了一组HTTP首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
          并且规范要求，对那些可能会对服务器资源产生改变的请求方法，
@@ -940,7 +393,6 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     }
 
     serv.on('clientError', (err, sock) => {sock.end("Bad Request");});
-
     //限制连接数量
     serv.on('connection', (sock) => {
         the.rundata.cur_conn += 1;
@@ -958,7 +410,15 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     return serv;
 };
 
+/**
+ * 负载情况
+ */
 motoboat.prototype.loadInfo = [];
+
+/**
+ * 通过loadInfo计算并输出负载情况，这个函数要在Master进程中调用，否则会报错。
+ * @param {object} w 子进程发送的负载情况。
+ */
 motoboat.prototype.showLoadInfo = function (w) {
     var total = Object.keys(cluster.workers).length;
     if (this.loadInfo.length == total) {

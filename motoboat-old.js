@@ -1,11 +1,12 @@
 /**
- * motoboat 1.4.2
+ * motoboat 1.4.6
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
  * See the MPL for more details:
  *     https://www.mozilla.org/en-US/MPL/2.0/
  */
+'use strict';
 
 const fs = require('fs');
 const qs = require('querystring');
@@ -18,13 +19,15 @@ const os = require('os');
 const {spawn, exec} = require('child_process');
 const util = require('util');
 
-module.exports = function () {
-    
+var motoboat = function () {
+    if (!(this instanceof motoboat)) {return new motoboat(); }
     var the = this;
-
     this.config = {
         //此配置表示POST/PUT提交表单的最大字节数，也是上传文件的最大限制，
         body_max_size   : 8000000,
+
+        //最大上传文件数量
+        max_files       : 15,
 
         //开启守护进程，守护进程用于上线部署，要使用ants接口，run接口不支持
         daemon          : false,
@@ -179,86 +182,6 @@ module.exports = function () {
         return null;
     };
 
-    //请求上下文
-    this.context = function () {
-        var ctx = {
-            method      : '',
-            url         : {
-                host        : '',
-                protocol    : '',
-                href        : '',
-                origin      : '',
-                port        : '',
-            },
-            ip          : '',
-            //实际的访问路径
-            path        : '',
-            name        : '',
-            headers     : {},
-            //实际执行请求的路径
-            routepath   : '/',
-            args        : {},
-            param       : {},
-            bodyparam   : {},
-            isUpload    : false,
-            group       : '',
-            rawBody     : '',
-            files       : {},
-            requestCall : null,
-            extName     : the.helper.extName,
-            genFileName : the.helper.genFileName,
-
-            request     : null,
-            response    : null,
-
-            res         : {
-                statusCode : 200,
-                data : '',
-                encoding : 'utf8'
-            },
-
-            keys : {},
-
-        };
-        ctx.getFile = function(name, ind = 0) {
-            if (ind < 0) {
-                return ctx.files[name] || [];
-            }
-
-            if (ctx.files[name] === undefined) {
-                return null;
-            }
-            
-            if (ind >= ctx.files[name].length) {
-                return null;
-            }
-            return ctx.files[name][ind];
-        };
-
-        ctx.setHeader = {};
-
-        ctx.res.write = function(data) {
-            if (typeof data === 'string') {
-                ctx.res.data += data;
-            } else if (data instanceof Buffer) {
-                ctx.res.data += data.toString(ctx.res.encoding);
-            } else if (typeof data === 'number') {
-                ctx.res.data += data.toString();
-            }
-        };
-
-        ctx.res.status = function(stcode) {
-            if(ctx.response && ctx.response.statusCode) {
-                ctx.response.statusCode = stcode;
-                ctx.res.statusCode = stcode;
-            }
-        };
-
-        ctx.moveFile = the.helper.moveFile;
-
-        return ctx;
-    };
-
     this.methodList = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
 
     this.ApiTable = {
@@ -271,31 +194,31 @@ module.exports = function () {
 
     this.router = {};
     
-    this.router.get = function(api_path, callback, name='') {
+    this.router.get = (api_path, callback, name='') => {
         the.addPath(api_path, 'GET', callback, name);
     };
 
-    this.router.post = function(api_path, callback, name='') {
+    this.router.post = (api_path, callback, name='') => {
         the.addPath(api_path, 'POST', callback, name);
     };
 
-    this.router.put = function(api_path, callback, name='') {
+    this.router.put = (api_path, callback, name='') => {
         the.addPath(api_path, 'PUT', callback, name);
     };
 
-    this.router.delete = function(api_path, callback, name='') {
+    this.router.delete = (api_path, callback, name='') => {
         the.addPath(api_path, 'DELETE', callback, name);
     };
 
-    this.router.options = function(api_path, callback, name = '') {
+    this.router.options = (api_path, callback, name = '') => {
         the.addPath(api_path, 'OPTIONS', callback, name);
     };
 
-    this.router.any = function(api_path, callback, name='') {
+    this.router.any = (api_path, callback, name='') => {
         the.router.map(the.methodList, api_path, callback, name);
     };
 
-    this.router.map = function(marr, api_path, callback, name='') {
+    this.router.map = (marr, api_path, callback, name='') => {
         for(var i=0; i<marr.length; i++) {
             the.addPath(api_path, marr[i], callback, name);
         }
@@ -365,224 +288,6 @@ module.exports = function () {
 
     };
 
-    /*
-        如果路径超过2000字节长度，并且分割数组太多，length超过8则不处理。
-    */
-    this.findPath = function(path, method) {
-        if (!the.ApiTable[method]) {
-            return null;
-        }
-        if (path.length > 2042) {
-            return null;
-        }
-        var path_split = path.split('/');
-        path_split = path_split.filter(p => p.length > 0);
-        if (path_split.length > 9) {
-            return null;
-        }
-
-        var next = 0;
-        var args = {};
-        var rt = null;
-        for (var k in the.ApiTable[method]) {
-            rt = the.ApiTable[method][k];
-            if (rt.isArgs === false && rt.isStar === false) {
-                continue;
-            }
-
-            if (
-              (rt.routeArr.length !== path_split.length && rt.isStar === false)
-              ||
-              (rt.isStar && rt.routeArr.length > path_split.length+1)
-            ) {
-                continue;
-            }
-
-            next = false;
-            args = {};
-            
-            if (rt.isStar) {
-                for(var i=0; i<rt.routeArr.length; i++) {
-                    if (rt.routeArr[i] == '*') {
-                        args.starPath = path_split.slice(i).join('/');
-                    } else if(rt.routeArr[i] !== path_split[i]) {
-                        next = true;
-                        break;
-                    }
-                }
-            } else {
-                for(var i=0; i<rt.routeArr.length; i++) {
-                    if (rt.routeArr[i][0] == ':') {
-                        args[rt.routeArr[i].substring(1)] = path_split[i];
-                    } else if (rt.routeArr[i] !== path_split[i]) {
-                        next = true;
-                        break;
-                    }
-                }
-            }
-
-            if (next) {
-                continue;
-            }
-            return {
-                key : k,
-                args : args
-            };
-        }
-
-        return null;
-    };
-
-    this.findRealPath = function(path, method) {
-        var route_path = null;
-        if (path.length > 1
-            && path[path.length-1] == '/'
-            && the.config.ignore_slash
-        ) {
-            path = path.substring(0, path.length-1);
-        }
-
-        if (the.ApiTable[method][path] !== undefined) {
-            route_path = path;
-        }
-
-        if (route_path && route_path.indexOf('/:') >= 0) {
-            route_path = null;
-        }
-
-        var parg = null;
-        if (route_path === null) {
-            parg = the.findPath(path, method);
-        } else {
-            parg = {
-                args : {},
-                key  : route_path
-            };
-        }
-        return parg;
-    };
-
-    /**
-     * 执行请求的包装方法，会根据请求上下文信息查找路由表，确定是否可执行。
-     * 如果是上传文件，并且开启了自动解析选项，则会解析文件数据。
-     * 最后会调用runMiddleware方法。
-     * @param {object} ctx 请求上下文实例。
-     */
-
-    this.execRequest = function (ctx) {
-
-        var r = the.ApiTable[ctx.method][ctx.routepath];
-        ctx.requestCall = r.ReqCall;
-        //用于分组检测
-        ctx.group = '/' + r.routeArr[0];
-        if (!the.api_group_table[ctx.group] 
-            || !the.api_group_table[ctx.group][ctx.routepath]
-        ) {
-            ctx.group = '';
-        }
-        ctx.name = r.name;
-
-        if ((ctx.method == 'POST' || ctx.method == 'PUT' || ctx.method == 'DELETE') 
-            && !ctx.isUpload && ctx.rawBody.length > 0
-        ) {
-            if (ctx.headers['content-type'] && 
-                ctx.headers['content-type'].indexOf('application/x-www-form-urlencoded') >= 0
-            ) {
-                ctx.bodyparam = qs.parse(
-                        Buffer.from(ctx.rawBody, 'binary').toString('utf8')
-                    );
-            } else {
-                ctx.bodyparam = Buffer
-                                .from(ctx.rawBody, 'binary')
-                                .toString('utf8');
-            }
-        }
-        else if (ctx.isUpload && the.config.parse_upload) {
-            the.parseUploadData(ctx);
-            ctx.rawBody = '';
-        }
-        
-        return the.runMiddleware(ctx);
-    };
-
-    this.group = function(grp) {
-        var gt = new function() {
-            var t = this;
-
-            if (grp == '' || grp[0] !== '/') {
-                grp = `/${grp}`;
-            }
-            if (grp.length > 0 && grp[grp.length-1] == '/' && grp!=='/') {
-                grp = grp.substring(0, grp.length-1);
-            }
-
-            t.group_name = grp;
-
-            t.realPath = function(apath) {
-                if (apath == '/' && the.config.ignore_slash) {
-                    return t.group_name;
-                }
-                if (apath[0]!=='/') {
-                    if (t.group_name!=='/') {
-                        return `${t.group_name}/${apath}`;
-                    } else {
-                        return `${t.group_name}${apath}`;
-                    }
-                } else {
-                    if (t.group_name!=='/') {
-                        return `${t.group_name}${apath}`;
-                    } else {
-                        return apath;
-                    }
-                }
-            }
-
-            t.add_group_api = function(apath) {
-                if (!the.api_group_table[t.group_name]) {
-                    the.api_group_table[t.group_name] = {};
-                }
-                the.api_group_table[t.group_name][t.realPath(apath)] = apath;
-            };
-
-            t.get = function(apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.get(t.realPath(apath), callback, name);
-            };
-
-            t.post = function(apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.post(t.realPath(apath), callback, name);
-            };
-
-            t.delete = function(apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.delete(t.realPath(apath), callback, name);
-            };
-
-            t.options = function(apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.options(t.realPath(apath), callback, name);
-            };
-
-            t.any = function(apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.any(t.realPath(apath), callback, name);
-            };
-
-            t.map = function(marr, apath, callback, name='') {
-                t.add_group_api(apath);
-                the.router.map(marr, t.realPath(apath), callback, name);
-            };
-
-            t.add = function(midcall, preg = null) {
-                the.add(midcall, preg, t.group_name);
-            };
-        };
-
-        return gt;
-    };
-    
-
     this.mid_chain = [
         async function(ctx) {
             return ;
@@ -618,7 +323,6 @@ module.exports = function () {
         */
         var genRealCall = function(prev_mid, group) {
             return async function(rr) {
-
                 if (preg) {
                     if (
                         (typeof preg === 'string' && preg !== rr.routepath)
@@ -638,184 +342,491 @@ module.exports = function () {
         };
 
         var last = 0;
-
         if (group) {
-            
             if (!the.mid_group[group]) {
                 the.mid_group[group] = [the.mid_chain[0], the.mid_chain[1]];
             }
-
             last = the.mid_group[group].length - 1;
             the.mid_group[group].push(genRealCall(last, group));
         } else {
-            //this.mid_group['*global*'].push(last+1);
             //全局添加中间件
             for(var k in the.mid_group) {
                 last = the.mid_group[k].length - 1;
                 the.mid_group[k].push(genRealCall(last, k));
             }
         }
-
     };
     
     this.router.add = the.add;
 
     /**
-     * 执行中间件，其中核心则是请求回调函数。
-     * @param {object} ctx 请求上下文实例。
+     * 返回一个分组路由对象，主要便于路由分组操作
+     * @param {string} grp 分组名称
      */
-    this.runMiddleware = async function (ctx) {
-        try {
-            var group = '*global*';
-            if (ctx.group !== '') {
-                group = ctx.group;
+    this.group = function (grp) {
+        if (grp == '' || grp[0] !== '/') {
+            grp = `/${grp}`;
+        }
+        if (grp.length > 0 && grp[grp.length-1] == '/' && grp!=='/') {
+            grp = grp.substring(0, grp.length-1);
+        }
+
+        var gt = {
+            group_name : grp
+        };
+
+        gt.realPath = function (apath) {
+            if (apath == '/' && the.config.ignore_slash) {
+                return gt.group_name;
             }
-
-            var last = the.mid_group[group].length-1;
-            await the.mid_group[group][last](ctx, the.mid_group[group][last-1]);
-
-        } catch (err) {
-            if (the.config.debug) {
-                console.log(err);
+            if (apath[0]!=='/') {
+                if (gt.group_name!=='/') {
+                    return `${gt.group_name}/${apath}`;
+                } else {
+                    return `${gt.group_name}${apath}`;
+                }
+            } else {
+                if (gt.group_name!=='/') {
+                    return `${gt.group_name}${apath}`;
+                } else {
+                    return apath;
+                }
             }
-            ctx.res.status(500);
-            ctx.response.end();
-        }
-    };
-    
-    /*
-        multipart/form-data
-        multipart/byteranges不支持
-    */
-    this.checkUploadHeader = function(headerstr) {
-        var preg = /multipart.* boundary.*=/i;
-        if (preg.test(headerstr)) {
-            return true;
-        }
-        return false;
-    };
-    
-    /*
-        解析上传文件数据的函数，此函数解析的是整体的文件，
-        解析过程参照HTTP/1.1协议。
-    */
-    this.parseUploadData = function(ctx) {
-        var bdy = ctx.headers['content-type'].split('=')[1];
-        bdy = bdy.trim();
-        bdy = `--${bdy}`;
-        var end_bdy = bdy + '--';
+        };
 
-        var bdy_crlf = `${bdy}\r\n`;
-        var crlf_bdy = `\r\n${bdy}`;
-
-        var file_end = 0;
-        var file_start = 0;
-
-        file_start = ctx.rawBody.indexOf(bdy_crlf);
-        if (file_start < 0) {
-            return ;
-        }
-        file_start += bdy_crlf.length;
-        while(1) {
-            file_end = ctx.rawBody.indexOf(crlf_bdy, file_start);
-            if (file_end <= 0) {
-                break;
+        gt.add_group_api = (apath) => {
+            if (!the.api_group_table[gt.group_name]) {
+                the.api_group_table[gt.group_name] = {};
             }
-            the.parseSingleFile(ctx, file_start, file_end);
-            file_start = file_end + bdy_crlf.length;
-        }
-    };
+            the.api_group_table[gt.group_name][gt.realPath(apath)] = apath;
+        };
 
-    //解析单个文件数据
-    this.parseSingleFile = function(ctx, start_ind, end_ind) {
-        var header_end_ind = ctx.rawBody.indexOf('\r\n\r\n',start_ind);
+        gt.get = function(apath, callback, name='') {
+            gt.add_group_api(apath);
+            the.router.get(gt.realPath(apath), callback, name);
+        };
 
-        var header_data = Buffer.from(
-                ctx.rawBody.substring(start_ind, header_end_ind), 
-                'binary'
-            ).toString('utf8');
-        
-        var file_post = {
-            filename        : '',
-            'content-type'  : '',
-            data            : '',
+        gt.post = function(apath, callback, name='') {
+            gt.add_group_api(apath);
+            the.router.post(gt.realPath(apath), callback, name);
+        };
+
+        gt.delete = function(apath, callback, name='') {
+            gt.add_group_api(apath);
+            the.router.delete(gt.realPath(apath), callback, name);
+        };
+
+        gt.options = function(apath, callback, name='') {
+            t.add_group_api(apath);
+            the.router.options(gt.realPath(apath), callback, name);
+        };
+
+        gt.any = function(apath, callback, name='') {
+            gt.add_group_api(apath);
+            the.router.any(gt.realPath(apath), callback, name);
+        };
+
+        gt.map = function(marr, apath, callback, name='') {
+            gt.add_group_api(apath);
+            the.router.map(marr, gt.realPath(apath), callback, name);
+        };
+
+        gt.add = function(midcall, preg = null) {
+            the.add(midcall, preg, gt.group_name);
         };
         
-        file_post.data = ctx.rawBody.substring(header_end_ind+4, end_ind);
+        return gt;
+    };
 
-        //parse header
-        if (header_data.search("Content-Type") < 0) {
-            //post form data, not file data
-            var form_list = header_data.split(";");
-            var tmp;
-            for(var i=0; i<form_list.length; i++) {
-                tmp = form_list[i].trim();
-                if (tmp.search("name=") > -1) {
-                    var name = tmp.split("=")[1].trim();
-                    name = name.substring(1, name.length-1);
-                    ctx.bodyparam[name] = Buffer.from(file_post.data, 'binary').toString('utf8');
+};
+
+motoboat.prototype.context = function () {
+    var ctx = {
+        method      : '',
+        url         : {
+            host        : '',
+            protocol    : '',
+            href        : '',
+            origin      : '',
+            port        : '',
+        },
+        ip          : '',
+        //实际的访问路径
+        path        : '',
+        name        : '',
+        headers     : {},
+        //实际执行请求的路径
+        routepath   : '/',
+        args        : {},
+        param       : {},
+        bodyparam   : {},
+        isUpload    : false,
+        group       : '',
+        rawBody     : '',
+        files       : {},
+        requestCall : null,
+        extName     : this.helper.extName,
+        genFileName : this.helper.genFileName,
+
+        request     : null,
+        response    : null,
+
+        res         : {
+            statusCode : 200,
+            data : '',
+            encoding : 'utf8'
+        },
+
+        keys : {},
+
+    };
+    ctx.getFile = function(name, ind = 0) {
+        if (ind < 0) {return ctx.files[name] || [];}
+
+        if (ctx.files[name] === undefined) {return null;}
+        
+        if (ind >= ctx.files[name].length) {return null;}
+
+        return ctx.files[name][ind];
+    };
+
+    ctx.setHeader = function (name, val) {
+        ctx.response.setHeader(name, val);
+    };
+
+    ctx.res.write = function(data) {
+        if (typeof data === 'string') {
+            ctx.res.data += data;
+        } else if (data instanceof Buffer) {
+            ctx.res.data += data.toString(ctx.res.encoding);
+        } else if (typeof data === 'number') {
+            ctx.res.data += data.toString();
+        }
+    };
+
+    ctx.res.status = function(stcode) {
+        if(ctx.response && ctx.response.statusCode) {
+            ctx.response.statusCode = stcode;
+            ctx.res.statusCode = stcode;
+        }
+    };
+
+    ctx.moveFile = this.helper.moveFile;
+    return ctx;
+};
+
+motoboat.prototype.findPath = function(path, method) {
+    if (!this.ApiTable[method]) {
+        return null;
+    }
+    if (path.length > 2042) {
+        return null;
+    }
+    var path_split = path.split('/');
+    path_split = path_split.filter(p => p.length > 0);
+    if (path_split.length > 9) {
+        return null;
+    }
+
+    var next = 0;
+    var args = {};
+    var rt = null;
+    for (var k in this.ApiTable[method]) {
+        rt = this.ApiTable[method][k];
+        if (rt.isArgs === false && rt.isStar === false) {
+            continue;
+        }
+
+        if (
+          (rt.routeArr.length !== path_split.length && rt.isStar === false)
+          ||
+          (rt.isStar && rt.routeArr.length > path_split.length+1)
+        ) {
+            continue;
+        }
+
+        next = false;
+        args = {};
+        
+        if (rt.isStar) {
+            for(var i=0; i<rt.routeArr.length; i++) {
+                if (rt.routeArr[i] == '*') {
+                    args.starPath = path_split.slice(i).join('/');
+                } else if(rt.routeArr[i] !== path_split[i]) {
+                    next = true;
                     break;
                 }
             }
         } else {
-            //file data
-            var form_list = header_data.split("\r\n").filter(s => s.length > 0);
-            var tmp_name = form_list[0].split(";");
-
-            var name = '';
-            for (var i=0; i<tmp_name.length; i++) {
-                if (tmp_name[i].search("filename=") > -1) {
-                    file_post.filename = tmp_name[i].split("=")[1].trim();
-                    file_post.filename = file_post.filename.substring(1, file_post.filename.length-1);
-                } else if (tmp_name[i].search("name=") > -1) {
-                    name = tmp_name[i].split("=")[1].trim();
-                    name = name.substring(1, name.length-1);
+            for(var i=0; i<rt.routeArr.length; i++) {
+                if (rt.routeArr[i][0] == ':') {
+                    args[rt.routeArr[i].substring(1)] = path_split[i];
+                } else if (rt.routeArr[i] !== path_split[i]) {
+                    next = true;
+                    break;
                 }
             }
-
-            if (name == '') {
-                file_post.data = '';
-                return ;
-            }
-
-            file_post['content-type'] = form_list[1].split(":")[1].trim();
-            
-            if (ctx.files[name] === undefined) {
-                ctx.files[name] = [file_post];
-            } else {
-                ctx.files[name].push(file_post);
-            }
         }
-    };
 
-    this.sendReqLog = function (headers, rinfo) {
-        var log_data = {
-            type    : 'log',
-            success : true,
-            method  : headers.method,
-            link    : `${the.config.https_on?'https://':'http://'}${headers['host']}${rinfo.path}`,
-            time    : (new Date()).toLocaleString("zh-Hans-CN"),
-            status  : rinfo.status,
-            ip      : rinfo.ip
-        };
-        if (headers['x-real-ip']) {
-            log_data.ip = headers['x-real-ip'];
+        if (next) {continue;}
+
+        return {key: k, args: args};
+    }
+
+    return null;
+};
+
+motoboat.prototype.findRealPath = function(path, method) {
+    var route_path = null;
+    if (path.length > 1
+        && path[path.length-1] == '/'
+        && this.config.ignore_slash
+    ) {
+        path = path.substring(0, path.length-1);
+    }
+
+    if (this.ApiTable[method][path] !== undefined) {
+        route_path = path;
+    }
+
+    if (route_path && route_path.indexOf('/:') >= 0) {
+        route_path = null;
+    }
+
+    var parg = null;
+    if (route_path === null) {
+        parg = this.findPath(path, method);
+    } else {
+        parg = {args : {}, key: route_path};
+    }
+    return parg;
+};
+
+/**
+ * 执行请求的包装方法，会根据请求上下文信息查找路由表，确定是否可执行。
+ * 如果是上传文件，并且开启了自动解析选项，则会解析文件数据。
+ * 最后会调用runMiddleware方法。
+ * @param {object} ctx 请求上下文实例。
+ */
+motoboat.prototype.execRequest = function (ctx) {
+    var r = this.ApiTable[ctx.method][ctx.routepath];
+    ctx.requestCall = r.ReqCall;
+    //用于分组检测
+    ctx.group = '/' + r.routeArr[0];
+    if (!this.api_group_table[ctx.group] 
+        || !this.api_group_table[ctx.group][ctx.routepath]
+    ) {
+        ctx.group = '';
+    }
+    ctx.name = r.name;
+
+    if ((ctx.method == 'POST' || ctx.method == 'PUT' || ctx.method == 'DELETE') 
+        && !ctx.isUpload && ctx.rawBody.length > 0
+    ) {
+        if (ctx.headers['content-type'] && 
+            ctx.headers['content-type'].indexOf('application/x-www-form-urlencoded') >= 0
+        ) {
+            ctx.bodyparam = qs.parse(
+                    Buffer.from(ctx.rawBody, 'binary').toString('utf8')
+                );
+        } else {
+            ctx.bodyparam = Buffer
+                            .from(ctx.rawBody, 'binary')
+                            .toString('utf8');
         }
+    }
+    else if (ctx.isUpload && this.config.parse_upload) {
+        this.parseUploadData(ctx);
+    }
     
-        if (log_data.status != 200) {
-            log_data.success = false;
+    return this.runMiddleware(ctx);
+};
+
+/**
+ * 执行中间件，其中核心则是请求回调函数。
+ * @param {object} ctx 请求上下文实例。
+ */
+motoboat.prototype.runMiddleware = async function (ctx) {
+    try {
+        var group = '*global*';
+        if (ctx.group !== '') {
+            group = ctx.group;
         }
-        if (process.send && typeof process.send === 'function') {
-            process.send(log_data);
+        var last = this.mid_group[group].length-1;
+        await this.mid_group[group][last](ctx, this.mid_group[group][last-1]);
+    } catch (err) {
+        if (this.config.debug) {
+            console.log(err);
+        }
+        ctx.res.status(500);
+        ctx.response.end();
+    }
+};
+
+/*
+    multipart/form-data
+    multipart/byteranges不支持
+*/
+motoboat.prototype.checkUploadHeader = function(headerstr) {
+    var preg = /multipart.* boundary.*=/i;
+    if (preg.test(headerstr)) {
+        return true;
+    }
+    return false;
+};
+
+/*
+    解析上传文件数据的函数，此函数解析的是整体的文件，
+    解析过程参照HTTP/1.1协议。
+*/
+motoboat.prototype.parseUploadData = function(ctx) {
+    var bdy = ctx.headers['content-type'].split('=')[1];
+    bdy = bdy.trim();
+    bdy = `--${bdy}`;
+    //var end_bdy = bdy + '--';
+
+    var bdy_crlf = `${bdy}\r\n`;
+    var crlf_bdy = `\r\n${bdy}`;
+
+    var file_end = 0;
+    var file_start = 0;
+
+    file_start = ctx.rawBody.indexOf(bdy_crlf);
+    if (file_start < 0) {
+        return ;
+    }
+    file_start += bdy_crlf.length;
+    var end_break = (this.config.max_files > 0) ? this.config.max_files : 15;
+    var i=0; //保证不出现死循环或恶意数据产生大量无意义循环
+    while(i < end_break) {
+        file_end = ctx.rawBody.indexOf(crlf_bdy, file_start);
+        if (file_end <= 0) { break; }
+
+        this.parseSingleFile(ctx, file_start, file_end);
+        file_start = file_end + bdy_crlf.length;
+        i++;
+    }
+    ctx.rawBody = '';
+};
+
+//解析单个文件数据
+motoboat.prototype.parseSingleFile = function(ctx, start_ind, end_ind) {
+    var header_end_ind = ctx.rawBody.indexOf('\r\n\r\n',start_ind);
+
+    var header_data = Buffer.from(
+            ctx.rawBody.substring(start_ind, header_end_ind), 
+            'binary'
+        ).toString('utf8');
+    
+    var file_post = {
+        filename        : '',
+        'content-type'  : '',
+        data            : '',
+    };
+    
+    file_post.data = ctx.rawBody.substring(header_end_ind+4, end_ind);
+
+    //parse header
+    if (header_data.search("Content-Type") < 0) {
+        //post form data, not file data
+        var form_list = header_data.split(";");
+        var tmp;
+        for(var i=0; i<form_list.length; i++) {
+            tmp = form_list[i].trim();
+            if (tmp.search("name=") > -1) {
+                var name = tmp.split("=")[1].trim();
+                name = name.substring(1, name.length-1);
+                ctx.bodyparam[name] = Buffer.from(file_post.data, 'binary').toString('utf8');
+                break;
+            }
+        }
+    } else {
+        //file data
+        var form_list = header_data.split("\r\n").filter(s => s.length > 0);
+        var tmp_name = form_list[0].split(";");
+
+        var name = '';
+        for (var i=0; i<tmp_name.length; i++) {
+            if (tmp_name[i].search("filename=") > -1) {
+                file_post.filename = tmp_name[i].split("=")[1].trim();
+                file_post.filename = file_post.filename.substring(1, file_post.filename.length-1);
+            } else if (tmp_name[i].search("name=") > -1) {
+                name = tmp_name[i].split("=")[1].trim();
+                name = name.substring(1, name.length-1);
+            }
+        }
+
+        if (name == '') {
+            file_post.data = '';
+            return ;
+        }
+
+        file_post['content-type'] = form_list[1].split(":")[1].trim();
+        
+        if (ctx.files[name] === undefined) {
+            ctx.files[name] = [file_post];
+        } else {
+            ctx.files[name].push(file_post);
+        }
+    }
+};
+
+motoboat.prototype.sendReqLog = function (headers, rinfo) {
+    var log_data = {
+        type    : 'log',
+        success : true,
+        method  : headers.method,
+        link    : `${this.config.https_on?'https://':'http://'}${headers['host']}${rinfo.path}`,
+        time    : (new Date()).toLocaleString("zh-Hans-CN"),
+        status  : rinfo.status,
+        ip      : rinfo.ip
+    };
+    if (headers['x-real-ip']) {
+        log_data.ip = headers['x-real-ip'];
+    }
+
+    if (log_data.status != 200) {
+        log_data.success = false;
+    }
+    if (process.send && typeof process.send === 'function') {
+        process.send(log_data);
+    }
+};
+
+/*
+    这是最终添加的请求中间件。基于洋葱模型，
+    这个中间件最先执行，所以最后会返回响应结果。
+*/
+motoboat.prototype.addFinalResponse = function () {
+    var fr = async function(ctx, next) {
+        if (!ctx.response.getHeader('content-type')) {
+            ctx.response.setHeader('content-type', 'text/html;charset=utf8');
+        }
+        await next(ctx);
+
+        if (ctx.res.data === null || ctx.res.data === false) {
+            ctx.response.end();
+        } else if (typeof ctx.res.data === 'object') {
+            ctx.response.end(JSON.stringify(ctx.res.data));
+        } else if (typeof ctx.res.data === 'string') {
+            ctx.response.end(ctx.res.data, ctx.res.encoding);
+        } else {
+            ctx.response.end();
         }
     };
+    this.add(fr);
+};
 
-    /**
-     * 请求执行回调函数，传递参数和Node.js的HTTP模块描述一致。
-     * 
-     * */
-    this.reqHandler = function (req, res) {
+/**
+ * 开始监听请求，此函数根据配置等信息做处理后调用listen
+ * @param {number} port 端口
+ * @param {string} host IP地址
+ */
+motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
+    this.addFinalResponse();
+    var the = this;
 
+    var onRequest = (req, res) => {
         req.on('abort', (err) => {res.statusCode = 400; res.end();});
         req.on('error', (err) => {
             req.abort();
@@ -847,14 +858,7 @@ module.exports = function () {
         }
 
         var real_path = '';
-        try {
-            real_path = the.findRealPath(urlobj.pathname, req.method);
-        } catch (err) {
-            res.statusCode = 500;
-            res.end();
-            return ;
-        }
-
+        real_path = the.findRealPath(urlobj.pathname, req.method);
         if (real_path === null) {
             res.statusCode = 404;
             res.end(the.config.page_404);
@@ -862,9 +866,7 @@ module.exports = function () {
         }
 
         var ctx = the.context();
-
         ctx.method = req.method;
-        
         ctx.url.host = req.headers['host'];
         ctx.url.protocol = urlobj.protocol;
         ctx.url.href = urlobj.href;
@@ -877,12 +879,10 @@ module.exports = function () {
         ctx.routepath = real_path.key;
         ctx.args = real_path.args;
         ctx.param = urlobj.query;
-        ctx.setHeader = res.setHeader;
-
         /*
-            跨域资源共享标准新增了一组 HTTP 首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
-            并且规范要求，对那些可能会对服务器资源产生改变的请求方法，需要先发送OPTIONS请求获取是否允许跨域
-            以及允许的方法。
+         跨域资源共享标准新增了一组HTTP首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
+         并且规范要求，对那些可能会对服务器资源产生改变的请求方法，
+         需要先发送OPTIONS请求获取是否允许跨域以及允许的方法。
         */
         if (req.method == 'GET' || req.method == 'OPTIONS') {
             req.on('data', data => {
@@ -901,265 +901,205 @@ module.exports = function () {
                     return ;
                 }
             }
-            //return the.execRequest(ctx);
         }
-        else if (req.method == 'POST' 
-            || req.method == 'PUT' 
-            || req.method == 'DELETE'
-        ) {
+        else if (req.method=='POST' || req.method=='PUT' || req.method=='DELETE')
+        {
             ctx.isUpload = the.checkUploadHeader(req.headers['content-type']);
             req.on('data', data => {
                 ctx.rawBody += data.toString('binary');
                 if (ctx.rawBody.length > the.config.body_max_size) {
                     ctx.rawBody = '';
                     res.statusCode = 413;
-                    res.end(
-                        'Request data too large, out of limit:'
-                        +'(' + (the.config.body_max_size/1000) + 'Kb)'
-                    );
-                    //req.abort();
+                    res.end(`Body too large,limit:${the.config.body_max_size/1000}Kb`);
                     req.destroy(new Error('body data too large'));
                 }
             }); 
         }
-
         req.on('end',() => {
-            if (req.aborted) {
-                return ;
-            }
+            if (req.aborted) { return; }
             return the.execRequest(ctx);
         });
     };
 
-    /*
-        这是最终添加的请求中间件。基于洋葱模型，
-        这个中间件最先执行，所以最后会返回响应结果。
-    */
-    this.addFinalResponse = function() {
-        var fr = async function(rr, next) {
-            if (!rr.response.getHeader('content-type')) {
-                rr.response.setHeader('content-type', 'text/html;charset=utf8');
-            }
-            await next(rr);
-
-            if (rr.res.data === null || rr.res.data === false) {
-                rr.response.end();
-            } else if (typeof rr.res.data === 'object') {
-                rr.response.end(JSON.stringify(rr.res.data));
-            } else if (typeof rr.res.data === 'string') {
-                rr.response.end(rr.res.data, 'binary');
-            } else {
-                rr.response.end();
-            }
-        };
-        the.add(fr);
-    };
-    
-    this.run = function(port = 8192, host = '0.0.0.0') {
-        //添加最终的中间件
-        this.addFinalResponse();
-
-        var opts = {};
-        var serv = null;
-        if (the.config.https_on) {
-            try {
-                opts = {
-                    key  : fs.readFileSync(the.config.key),
-                    cert : fs.readFileSync(the.config.cert)
-                };
-                serv = https.createServer(opts, the.reqHandler);
-                serv.on('tlsClientError', (err) => {});
-            } catch(err) {
-                console.log(err);
-                process.exit(-1);
-            }
-        } else {
-            serv = http.createServer(the.reqHandler);
+    var opts = {};
+    var serv = null;
+    if (the.config.https_on) {
+        try {
+            opts = {
+                key  : fs.readFileSync(the.config.key),
+                cert : fs.readFileSync(the.config.cert)
+            };
+            serv = https.createServer(opts, onRequest);
+            serv.on('tlsClientError', (err) => {});
+        } catch(err) {
+            console.log(err);
+            process.exit(-1);
         }
+    } else {
+        serv = http.createServer(onRequest);
+    }
 
-        serv.on('clientError', (err, sock) => {
-            sock.end("Bad Request");
-        });
+    serv.on('clientError', (err, sock) => {sock.end("Bad Request");});
 
-        //限制连接数量
-        serv.on('connection', (sock) => {
-            the.rundata.cur_conn += 1;
-            if (the.limit.max_conn > 0 
-                && the.rundata.cur_conn > the.limit.max_conn
-            ) {
-                sock.destroy();
-                if (the.config.debug) {
-                    console.log(the.rundata.cur_conn, 'closed');
-                }
-            }
-            sock.on('close', () => {
-                the.rundata.cur_conn -= 1;
-            });
-        });
-
-        serv.setTimeout(25000); //设置超时时间为25秒
-        serv.listen(port, host);
-        return serv;
-    };
-
-    /*
-        这个函数是可以用于运维部署，此函数默认会根据CPU核数创建对应的子进程处理请求。
-        子进程会调用run函数。
-    */
-    /**
-     * @param {number} port 端口号
-     * @param {string} host IP地址
-     * @param {number} num 子进程数量，默认为0，默认根据CPU核数创建子进程。
-     */
-    this.daemon = function(port=8192, host='0.0.0.0', num = 0) {
-        if (process.argv.indexOf('--daemon') > 0) {
-
-        } else if (the.config.daemon) {
-            var args = process.argv.slice(1);
-            args.push('--daemon');
-            const serv = spawn (
-                    process.argv[0],
-                    args,
-                    {
-                        detached : true,
-                        stdio : ['ignore', 1, 2]
-                    }
-                );
-            serv.unref();
-            return true;
+    //限制连接数量
+    serv.on('connection', (sock) => {
+        the.rundata.cur_conn += 1;
+        if (the.limit.max_conn > 0 
+            && the.rundata.cur_conn > the.limit.max_conn
+        ) {
+            sock.destroy();
+            if (the.config.debug) {console.log(the.rundata.cur_conn,'closed');}
         }
-        
-        if (cluster.isMaster) {
-            if (num <= 0) {
-                num = os.cpus().length;
-            }
+        sock.on('close', () => { the.rundata.cur_conn -= 1; });
+    });
 
-            if (typeof the.config.pid_file === 'string'
-                && the.config.pid_file.length > 0
-            ) {
-                fs.writeFile(the.config.pid_file, process.pid, (err) => {
-                    if (err) {
-                        console.error(err);
-                    }
-                });
-            }
-
-            for(var i=0; i<num; i++) {
-                cluster.fork();
-            }
-
-            if (cluster.isMaster) {
-                /*
-                    如果日志类型为file，并且设置了日志文件，
-                    则把输出流重定向到文件。
-                    但是在子进程处理请求仍然可以输出到终端。
-                */
-                var logger = null;
-                if (the.config.log_type == 'file') {
-                    var out_log = fs.createWriteStream(
-                        the.config.log_file, 
-                        {flags : 'a+' }
-                      );
-                    var err_log = fs.createWriteStream(
-                        the.config.error_log_file, 
-                        {flags : 'a+' }
-                      );
-                    logger = new console.Console({stdout:out_log, stderr: err_log}); 
-                } else if (the.config.log_type == 'stdio') {
-                    logger = new console.Console();
-                }
-                /*
-                    检测子进程数量，如果有子进程退出则fork出差值的子进程，
-                    维持在一个恒定的值。
-                */
-                setInterval(() => {
-                    var num_dis = num - Object.keys(cluster.workers).length;
-                    for(var i=0; i<num_dis; i++) {
-                        cluster.fork();
-                    }
-                }, 2000);
-                
-                var loadInfo = [];
-                var showLoadInfo = function (w) {
-                    var total = Object.keys(cluster.workers).length;
-                    if (loadInfo.length == total) {
-                        loadInfo.sort((a, b) => {
-                            if (a.pid < b.pid) {
-                                return -1;
-                            } else if (a.pid > b.pid) {
-                                return 1;
-                            }
-                            return 0;
-                        });
-                        if (!the.config.daemon) {
-                            console.clear();
-                        }
-                        var oavg = os.loadavg();
-
-                        var oscpu = `  CPU Loadavg  1m: ${oavg[0].toFixed(2)}  5m: ${oavg[1].toFixed(2)}  15m: ${oavg[2].toFixed(2)}\n`;
-                        
-                        var cols = '  PID       CPU       MEM       CONN\n';
-                        var tmp = '';
-                        var t = '';
-                        for(let i=0; i<loadInfo.length; i++) {
-                            tmp = (loadInfo[i].pid).toString() + '          ';
-                            tmp = tmp.substring(0, 10);
-                            t = loadInfo[i].cpu.user+loadInfo[i].cpu.system;
-                            t = (t/12800).toFixed(2);
-                            tmp += t + '%       ';
-                            tmp = tmp.substring(0, 20);
-                            tmp += (loadInfo[i].mem.rss / (1024*1024)).toFixed(2);
-                            tmp += 'M         ';
-                            tmp = tmp.substring(0, 30);
-                            tmp += loadInfo[i].conn.toString();
-                            cols += `  ${tmp}\n`;
-                        }
-                        cols += `  Master PID: ${process.pid}\n`;
-                        if (the.config.daemon) {
-                            try {
-                                fs.writeFileSync('./load-info.log',
-                                    oscpu+cols, {encoding:'utf8'}
-                                );
-                            } catch (err) {}
-                        } else {
-                            console.log(oscpu+cols);
-                        }
-                        loadInfo = [w];
-                    } else {
-                        loadInfo.push(w);
-                    }
-                };
-
-                cluster.on('message', (worker, message, handle) => {
-                    try {
-                        if(message.type == 'log' && message.success) {
-                            logger.log(JSON.stringify(message));
-                        } else if (message.type == 'log' && !message.success) {
-                            logger.error(JSON.stringify(message));
-                        }
-
-                        if (message.type == 'load') {
-                            showLoadInfo(message);
-                        }
-                    } catch (err) {}
-                });
-            }
-        } else if (cluster.isWorker) {
-            this.run(port, host);
-            if (the.config.show_load_info) {
-                var cpuLast = {user: 0, system: 0};
-                setInterval(() => {
-                    cpuTime = process.cpuUsage(cpuLast);
-                    process.send({
-                        type : 'load',
-                        pid  : process.pid,
-                        cpu  : cpuTime,
-                        mem  : process.memoryUsage(),
-                        conn : the.rundata.cur_conn
-                    });
-                    cpuLast = process.cpuUsage();
-                }, 1280);
-            }
-        }
-    };
+    serv.setTimeout(the.config.timeout);
+    serv.listen(port, host);
+    return serv;
 };
+
+motoboat.prototype.loadInfo = [];
+motoboat.prototype.showLoadInfo = function (w) {
+    var total = Object.keys(cluster.workers).length;
+    if (this.loadInfo.length == total) {
+        this.loadInfo.sort((a, b) => {
+            if (a.pid < b.pid) {
+                return -1;
+            } else if (a.pid > b.pid) {
+                return 1;
+            }
+            return 0;
+        });
+        if (!this.config.daemon) {
+            console.clear();
+        }
+        var oavg = os.loadavg();
+
+        var oscpu = `  CPU Loadavg  1m: ${oavg[0].toFixed(2)}  5m: ${oavg[1].toFixed(2)}  15m: ${oavg[2].toFixed(2)}\n`;
+
+        var cols = '  PID       CPU       MEM       CONN\n';
+        var tmp = '';
+        var t = '';
+        for(let i=0; i<this.loadInfo.length; i++) {
+            tmp = (this.loadInfo[i].pid).toString() + '          ';
+            tmp = tmp.substring(0, 10);
+            t = this.loadInfo[i].cpu.user + this.loadInfo[i].cpu.system;
+            t = (t/12800).toFixed(2);
+            tmp += t + '%       ';
+            tmp = tmp.substring(0, 20);
+            tmp += (this.loadInfo[i].mem.rss / (1024*1024)).toFixed(2);
+            tmp += 'M         ';
+            tmp = tmp.substring(0, 30);
+            tmp += this.loadInfo[i].conn.toString();
+            cols += `  ${tmp}\n`;
+        }
+        cols += `  Master PID: ${process.pid}\n`;
+        if (this.config.daemon) {
+            try {
+                fs.writeFileSync('./load-info.log',
+                    oscpu+cols, {encoding:'utf8'}
+                );
+            } catch (err) {}
+        } else {
+            console.log(oscpu+cols);
+        }
+        this.loadInfo = [w];
+    } else {
+        this.loadInfo.push(w);
+    }
+};
+
+/**
+ * 这个函数是可以用于运维部署，此函数默认会根据CPU核数创建对应的子进程处理请求。
+ * @param {number} port 端口号
+ * @param {string} host IP地址
+ * @param {number} num 子进程数量，默认为0，默认根据CPU核数创建子进程。
+ */
+motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
+    var the = this;
+    if (process.argv.indexOf('--daemon') > 0) {
+    } else if (the.config.daemon) {
+        var args = process.argv.slice(1);
+        args.push('--daemon');
+        const serv = spawn (
+                process.argv[0],
+                args,
+                {detached: true, stdio: ['ignore', 1, 2]}
+            );
+        serv.unref();
+        return true;
+    }
+    
+    if (cluster.isMaster) {
+        if (num <= 0) {num = os.cpus().length;}
+
+        if (typeof the.config.pid_file === 'string'
+            && the.config.pid_file.length > 0
+        ) {
+            fs.writeFile(the.config.pid_file, process.pid, (err) => {
+                if (err) {console.error(err);}
+            });
+        }
+
+        for(var i=0; i<num; i++) {
+            cluster.fork();
+        }
+
+        if (cluster.isMaster) {
+            var logger = null;
+            if (the.config.log_type == 'file') {
+                var out_log = fs.createWriteStream(
+                    the.config.log_file, {flags : 'a+' }
+                );
+                var err_log = fs.createWriteStream(
+                    the.config.error_log_file, {flags : 'a+' }
+                );
+                logger = new console.Console({stdout:out_log, stderr: err_log}); 
+            } else if (the.config.log_type == 'stdio') {
+                logger = new console.Console();
+            }
+            /*
+             检测子进程数量，如果有子进程退出则fork出差值的子进程，维持在一个恒定的值。
+            */
+            setInterval(() => {
+                var num_dis = num - Object.keys(cluster.workers).length;
+                for(var i=0; i<num_dis; i++) {
+                    cluster.fork();
+                }
+            }, 2000);
+
+            cluster.on('message', (worker, message, handle) => {
+                try {
+                    if(message.type == 'log' && message.success) {
+                        logger.log(JSON.stringify(message));
+                    } else if (message.type == 'log' && !message.success) {
+                        logger.error(JSON.stringify(message));
+                    }
+
+                    if (message.type == 'load') {
+                        the.showLoadInfo(message);
+                    }
+                } catch (err) {}
+            });
+        }
+    } else if (cluster.isWorker) {
+        this.run(port, host);
+        if (the.config.show_load_info) {
+            var cpuLast = {user: 0, system: 0};
+            var cpuTime = {};
+            setInterval(() => {
+                cpuTime = process.cpuUsage(cpuLast);
+                process.send({
+                    type : 'load',
+                    pid  : process.pid,
+                    cpu  : cpuTime,
+                    mem  : process.memoryUsage(),
+                    conn : the.rundata.cur_conn
+                });
+                cpuLast = process.cpuUsage();
+            }, 1280);
+        }
+    }
+};
+
+module.exports = motoboat;
