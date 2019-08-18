@@ -135,22 +135,22 @@ function router (options = {}) {
         }
 
         var gt = {
-            group_name : grp
+            groupName : grp
         };
 
         gt.realPath = function (apath) {
             if (apath == '/' && rt.ignoreSlash) {
-                return gt.group_name;
+                return gt.groupName;
             }
             if (apath[0]!=='/') {
-                if (gt.group_name!=='/') {
-                    return `${gt.group_name}/${apath}`;
+                if (gt.groupName!=='/') {
+                    return `${gt.groupName}/${apath}`;
                 } else {
-                    return `${gt.group_name}${apath}`;
+                    return `${gt.groupName}${apath}`;
                 }
             } else {
-                if (gt.group_name!=='/') {
-                    return `${gt.group_name}${apath}`;
+                if (gt.groupName!=='/') {
+                    return `${gt.groupName}${apath}`;
                 } else {
                     return apath;
                 }
@@ -158,10 +158,10 @@ function router (options = {}) {
         };
 
         gt.add_group_api = (apath) => {
-            if (!rt.apiGroupTable[gt.group_name]) {
-                rt.apiGroupTable[gt.group_name] = {};
+            if (!rt.apiGroupTable[gt.groupName]) {
+                rt.apiGroupTable[gt.groupName] = {};
             }
-            rt.apiGroupTable[gt.group_name][gt.realPath(apath)] = apath;
+            rt.apiGroupTable[gt.groupName][gt.realPath(apath)] = apath;
         };
 
         gt.get = function(apath, callback, name='') {

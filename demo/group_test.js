@@ -58,5 +58,13 @@ router.get('x/y/', async rr => {
     rr.res.data = `${rr.path}\n${rr.routepath}`;
 });
 
+router.get('/', async rr => {
+    var api_list = {
+        'GET' : Object.keys(router.apiTable['GET']),
+        'POST' : Object.keys(router.apiTable['POST'])
+    };
+    rr.res.data = api_list;
+});
+
 //支持IPv6地址
 ant.run(8098, '::');

@@ -79,7 +79,7 @@ function middleware (options = {}) {
                         ||
                         (preg instanceof Array && preg.indexOf(rr.routepath) < 0)
                     ) {
-                        await the.mid_group[group][prev_mid](rr);
+                        await mw.mid_group[group][prev_mid](rr);
                         return rr;
                     }
                 }
