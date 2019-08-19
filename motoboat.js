@@ -1,5 +1,5 @@
 /**
- * motoboat 1.5.3
+ * motoboat 1.6.2
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -24,16 +24,31 @@ const router = require('./router');
 const helper = require('./helper');
 
 /**
- * 
  * @param {object} options 初始化选项，参考值如下：
- * - ignoreSlash，忽略末尾的/，默认为true
- * - debug 调试模式，默认为true
- * - limit 限制请求最大连接数，如果是daemon接口，则是limit*进程数。
+ * - ignoreSlash{bool} 忽略末尾的/，默认为true
+ * - debug {bool} 调试模式，默认为true
+ * - limit {number} 限制请求最大连接数，如果是daemon接口，则是limit*进程数。
+ * - deny  {Array} IP字符串数组，表示要拒绝访问的IP。
+ * - maxIPConn {number} 单个IP单元时间内最大访问次数。
+ * - peerTimeLimitIP {number} 单元时间，配合maxIPConn，默认为1表示1秒钟清空一次。
+ * - maxIPCache {number} 最大IP缓存个数，配合限制IP访问次数使用，默认为15000。
+ * - whiteList {Array} 限制IP请求次数的白名单。
+ * - timeout 超时。
+ * - cert 启用HTTPS要使用的证书。
+ * - key  启用HTTPS的密钥。
+ * - globalLog {bool} 启用全局日志。
+ * - bodyMaxSize {number} 表示POST/PUT提交表单的最大字节数，包括上传文件。
+ * - maxFiles {number} 最大上传文件数量，超过则不处理。
+ * - daemon {bool} 启用守护进程模式。
+ * - pidFile {string} 保存Master进程PID的文件路径。
+ * - logFile {string}
+ * - errorLogFile {string}
+ * - logType {string}
+ * - pageNotFound {string}
  */
 var motoboat = function (options = {}) {
-    if (!(this instanceof motoboat)) {return new motoboat(); }
+    if (!(this instanceof motoboat)) {return new motoboat(options); }
     //var the = this;
-
     this.config = {
         //此配置表示POST/PUT提交表单的最大字节数，也是上传文件的最大限制，
         body_max_size   : 8000000,
@@ -43,15 +58,12 @@ var motoboat = function (options = {}) {
 
         //开启守护进程，守护进程用于上线部署，要使用ants接口，run接口不支持
         daemon          : false,
-
         /*
             开启守护进程模式后，如果设置路径不为空字符串，
             则会把pid写入到此文件，可用于服务管理。
         */
         pid_file        : '',
-
         log_file        : './access.log',
-
         error_log_file  : './error.log',
 
         /*
@@ -61,54 +73,113 @@ var motoboat = function (options = {}) {
                 file    文件，此时会使用log_file以及error_log_file 配置的文件路径
         */
         log_type        : 'ignore',
-
         //允许跨域的域名，支持 * 或 域名 或 域名 数组
         cors : null,
-
         //自动处理OPTIONS请求，用于处理所有路由的情况
         auto_options : false,
-
         /**
          * 如果你要更完整的记录请求日志，则需要此选项。
          */
         global_log : false,
-
         //自动解析上传的文件数据
         parse_upload    : true,
-
         //开启HTTPS
-        https_on        : false,
-
+        https           : false,
         //HTTPS密钥和证书的路径
         key  : '',
         cert : '',
-
         //设置服务器超时，毫秒单位，在具体的请求中，可以通过stream设置具体请求的超时时间
         timeout : 20000,
-
         page_404 : 'page not found',
-
         show_load_info : true,
-
         debug : true,
     };
-
-    if (options.debug !== undefined) {
-        this.config.debug = options.debug;
-    }
-
+    this.req_ip_table = {}; // 记录IP访问次数，用于一段时间内的单个IP访问次数限制。
     this.limit = {
-        /**
-         * 限制最大连接数，如果设置为0表示不限制
-         */
-        max_conn : 1024,
+        max_conn : 1024, //限制最大连接数，如果设置为0表示不限制
+        deny_ip: [], //拒绝请求的IP。
+        per_ip_max_req: 0, //每秒单个IP可以进行请求次数的上限，0表示不限制。
+        peer_time: 1, //IP访问次数限制的时间单元，1表示每隔1秒钟检测一次。
+        max_ip_cache: 15000, //存储IP最大个数，是req_ip_table的上限，否则于性能有损。
+        white_list: [], //限制IP请求次数的白名单。
     };
-    if (options.limit !== undefined && typeof options.limit === 'number') {
-        if (parseInt(options.limit) >= 0) {
-            this.limit.max_conn = options.limit;
+    if (typeof options == 'object') {
+        for(var k in options) {
+            switch (k) {
+                case 'limit':
+                  if (typeof options.limit=='number' && parseInt(options.limit) >= 0){
+                    this.limit.max_conn = options.limit;
+                  }
+                  break;
+                case 'deny':
+                  this.limit.deny_ip = options.deny; break;
+                case 'maxIPRequest':
+                  if (parseInt(options.maxIPRequest) >= 0) {
+                    this.limit.per_ip_max_req = parseInt(options.maxIPRequest);
+                  }
+                  break;
+                case 'peerTimeLimitIP':
+                  if (parseInt(options.peerTimeLimitIP) > 0) {
+                      this.limit.peer_time = parseInt(options.peerTimeLimitIP);
+                  }
+                  break;
+                case 'maxIPCache':
+                  if (parseInt(options.maxIPCache) >= 1024) {
+                      this.limit.max_ip_cache = parseInt(options.maxIPCache);
+                  }break;
+                case 'showLoadInfo':
+                  this.config.show_load_info = options.showLoadInfo; break;
+                case 'whiteList':
+                  this.limit.white_list = options.whiteList; break;
+                case 'debug':
+                  this.config.debug = options.debug; break;
+                case 'timeout':
+                  this.config.timeout = options.timeout; break;
+                case 'logType':
+                  this.config.log_type = options.logType; break;
+                case 'daemon':
+                  this.config.daemon = options.daemon; break;
+                case 'maxFiles':
+                  this.config.max_files = options.maxFiles; break;
+                case 'globalLog':
+                  this.config.global_log = options.globalLog; break;
+                case 'bodyMaxSize':
+                  this.config.body_max_size = options.bodyMaxSize; break;
+                case 'pageNotFound':
+                  this.config.page_404 = options.pageNotFound; break;
+                default:;
+            }
+        }
+
+        if (options.key && options.cert) {
+            try {
+                fs.accessSync(options.cert, fs.constants.F_OK);
+                fs.accessSync(options.cert, fs.constants.F_OK);
+                this.config.cert = options.cert;
+                this.config.key = options.key;
+                this.config.https = true;
+            } catch (err) {
+                console.log(err);
+            }
+        }
+        if (options.logFile) {
+            try {
+                fs.accessSync(options.logFile, fs.constants.F_OK);
+                this.config.log_file = options.logFile;
+            } catch (err) {
+                console.log(err);
+            }
+        }
+
+        if (options.errorLogFile) {
+            try {
+                fs.accessSync(options.errorLogFile, fs.constants.F_OK);
+                this.config.error_log_file = options.errorLogFile;
+            } catch (err) {
+                console.log(err);
+            }
         }
     }
-
     /**
      * 记录当前的运行情况
      */
@@ -117,11 +188,10 @@ var motoboat = function (options = {}) {
         cur_conn : 0,
         platform : os.platform()
     };
-
     //用于匹配content-type确定是不是上传文件。
     this.pregUpload = /multipart.* boundary.*=/i;
-
     this.methodList = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
+
     this.helper = helper;
     this.parseUploadData = bodyParser.parseUploadData;
     this.parseSingleFile = bodyParser.parseSingleFile;
@@ -133,7 +203,6 @@ var motoboat = function (options = {}) {
 
     this.router = router(options);
     this.group = this.router.group;
-
 };
 
 motoboat.prototype.context = function () {
@@ -265,9 +334,6 @@ motoboat.prototype.sendReqLog = function (headers, rinfo) {
         status  : rinfo.status,
         ip      : rinfo.ip
     };
-    if (headers['x-real-ip']) {
-        log_data.ip = headers['x-real-ip'];
-    }
 
     if (log_data.status != 200) {
         log_data.success = false;
@@ -278,11 +344,76 @@ motoboat.prototype.sendReqLog = function (headers, rinfo) {
 };
 
 /**
+ * 限制IP请求次数的定时器。
+ */
+motoboat.prototype.limitIPConnListen = function () {
+    var the = this;
+    setInterval(() => {
+        the.req_ip_table = {};
+    }, the.limit.peer_time * 1000);
+};
+
+/**
+ * 请求过滤函数。
+ * @param {object} the 其实就是this。
+ * @param {object} sock 当前请求的socket实例。
+ */
+motoboat.prototype.connFilter = function(sock) {
+    var the = this;
+    //检测是否在拒绝IP列表中。
+    if (the.limit.deny_ip.length > 0 
+        && the.limit.deny_ip.indexOf(sock.remoteAddress)>=0
+    ) {
+        sock.destroy();
+        return ;
+    }
+    
+    the.rundata.cur_conn += 1;
+    sock.on('close', () => {
+        the.rundata.cur_conn -= 1;
+    });
+
+    //检测是否超过最大连接数限制。
+    if (the.limit.max_conn > 0 
+        && the.rundata.cur_conn > the.limit.max_conn
+    ) {
+        sock.destroy();
+        if (the.config.debug) {console.log(the.rundata.cur_conn,'closed');}
+        return ;
+    }
+
+    //如果开启了单元时间内单个IP最大访问次数限制则检测是否合法。
+    var remote_ip = sock.remoteAddress;
+    if (the.limit.per_ip_max_req > 0 && the.limit.white_list.indexOf(remote_ip) < 0) {
+        if (the.req_ip_table[remote_ip] !== undefined) {
+            if (the.req_ip_table[remote_ip] >= the.limit.per_ip_max_req) {
+                sock.destroy();
+                return ;
+            } else {
+                the.req_ip_table[remote_ip] += 1;
+            }
+        } else if (Object.keys(the.req_ip_table).length >= the.limit.max_ip_cache) {
+            /** 
+             * 如果已经超过IP最大缓存数量限制则关闭连接，这种情况在极端情况下会出现。
+             * 不过最大缓存数量不能低于最大连接数。否则并发支持会受限制。
+             * */
+            sock.destroy();
+            return ;
+        } else {
+            the.req_ip_table[remote_ip] = 1;
+        }
+    }
+};
+
+/**
  * 开始监听请求，此函数根据配置等信息做处理后调用listen
  * @param {number} port 端口
  * @param {string} host IP地址
  */
 motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
+    if (this.limit.per_ip_max_req > 0) {
+        this.limitIPConnListen();
+    }
     this.addFinalResponse();
     var the = this;
     var onRequest = (req, res) => {
@@ -293,7 +424,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
             res.end();
         });
 
-        var remote_ip = req.socket.remoteAddress;
+        var remote_ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
         if (the.config.global_log && cluster.isWorker) {
             res.on('finish', () => {
                 the.sendReqLog(req.headers, {
@@ -328,6 +459,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         ctx.url.protocol = urlobj.protocol;
         ctx.url.href = urlobj.href;
         ctx.url.origin = urlobj.origin;
+        ctx.ip = remote_ip;
 
         ctx.request = req;
         ctx.response = res;
@@ -368,26 +500,28 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
                     ctx.rawBody = '';
                     res.statusCode = 413;
                     res.end(`Body too large,limit:${the.config.body_max_size/1000}Kb`);
-                    req.destroy(new Error('body data too large'));
+                    req.destroy(new Error(`body too large`));
                 }
             }); 
         }
         req.on('end',() => {
-            if (req.aborted) { return; }
+            if (req.aborted || res.finished) { return; }
             return the.execRequest(ctx);
         });
     };
 
     var opts = {};
     var serv = null;
-    if (the.config.https_on) {
+    if (the.config.https) {
         try {
             opts = {
                 key  : fs.readFileSync(the.config.key),
                 cert : fs.readFileSync(the.config.cert)
             };
             serv = https.createServer(opts, onRequest);
-            serv.on('tlsClientError', (err) => {});
+            serv.on('tlsClientError', (err) => {
+                if (the.config.debug) { console.log(err); }
+            });
         } catch(err) {
             console.log(err);
             process.exit(-1);
@@ -397,16 +531,9 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     }
 
     serv.on('clientError', (err, sock) => {sock.end("Bad Request");});
-    //限制连接数量
+    //限制连接数量，单个IP最大请求数量。
     serv.on('connection', (sock) => {
-        the.rundata.cur_conn += 1;
-        if (the.limit.max_conn > 0 
-            && the.rundata.cur_conn > the.limit.max_conn
-        ) {
-            sock.destroy();
-            if (the.config.debug) {console.log(the.rundata.cur_conn,'closed');}
-        }
-        sock.on('close', () => { the.rundata.cur_conn -= 1; });
+        return the.connFilter(sock);
     });
 
     serv.setTimeout(the.config.timeout);
@@ -414,9 +541,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     return serv;
 };
 
-/**
- * 负载情况
- */
+/** 负载情况 */
 motoboat.prototype.loadInfo = [];
 
 /**
@@ -481,10 +606,11 @@ motoboat.prototype.showLoadInfo = function (w) {
  * @param {number} num 子进程数量，默认为0，默认根据CPU核数创建子进程。
  */
 motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
-    
-    if (typeof host === 'number') {num = host; host = '0.0.0.0'; }
 
+    if (typeof host === 'number') {num = host; host = '0.0.0.0'; }
+    
     var the = this;
+
     if (process.argv.indexOf('--daemon') > 0) {
     } else if (the.config.daemon) {
         var args = process.argv.slice(1);
@@ -508,47 +634,41 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
                 if (err) {console.error(err);}
             });
         }
+        var logger = null;
+        if (the.config.log_type == 'file') {
+            var out_log = fs.createWriteStream(
+                the.config.log_file, {flags : 'a+' }
+            );
+            var err_log = fs.createWriteStream(
+                the.config.error_log_file, {flags : 'a+' }
+            );
+            logger = new console.Console({stdout:out_log, stderr: err_log}); 
+        } else if (the.config.log_type == 'stdio') {
+            logger = new console.Console();
+        }
+        cluster.on('message', (worker, msg, handle) => {
+            try {
+                if(msg.type == 'log' && msg.success) {
+                    logger.log(JSON.stringify(msg));
+                } else if (msg.type == 'log' && !msg.success) {
+                    logger.error(JSON.stringify(msg));
+                }
+
+                if (msg.type == 'load') { the.showLoadInfo(msg); }
+            } catch (err) { console.log(err); }
+        });
 
         for(var i=0; i<num; i++) {
             cluster.fork();
         }
-
         if (cluster.isMaster) {
-            var logger = null;
-            if (the.config.log_type == 'file') {
-                var out_log = fs.createWriteStream(
-                    the.config.log_file, {flags : 'a+' }
-                );
-                var err_log = fs.createWriteStream(
-                    the.config.error_log_file, {flags : 'a+' }
-                );
-                logger = new console.Console({stdout:out_log, stderr: err_log}); 
-            } else if (the.config.log_type == 'stdio') {
-                logger = new console.Console();
-            }
-            /*
-             检测子进程数量，如果有子进程退出则fork出差值的子进程，维持在一个恒定的值。
-            */
+            /** 检测子进程数量，如果有子进程退出则fork出差值的子进程，维持在一个恒定的值。*/
             setInterval(() => {
                 var num_dis = num - Object.keys(cluster.workers).length;
                 for(var i=0; i<num_dis; i++) {
                     cluster.fork();
                 }
             }, 2000);
-
-            cluster.on('message', (worker, message, handle) => {
-                try {
-                    if(message.type == 'log' && message.success) {
-                        logger.log(JSON.stringify(message));
-                    } else if (message.type == 'log' && !message.success) {
-                        logger.error(JSON.stringify(message));
-                    }
-
-                    if (message.type == 'load') {
-                        the.showLoadInfo(message);
-                    }
-                } catch (err) { console.log(err); }
-            });
         }
     } else if (cluster.isWorker) {
         this.run(port, host);
