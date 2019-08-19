@@ -1,5 +1,5 @@
 /**
- * motoboat 1.5.2
+ * motoboat 1.5.3
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -205,8 +205,8 @@ motoboat.prototype.context = function () {
             ctx.res.statusCode = stcode;
         }
     };
-
     ctx.moveFile = this.helper.moveFile;
+
     return ctx;
 };
 
@@ -458,6 +458,7 @@ motoboat.prototype.showLoadInfo = function (w) {
             cols += `  ${tmp}\n`;
         }
         cols += `  Master PID: ${process.pid}\n`;
+        cols += `  Listen ${this.loadInfo[0].host}:${this.loadInfo[0].port}\n`;
         if (this.config.daemon) {
             try {
                 fs.writeFileSync('./load-info.log',
@@ -480,6 +481,9 @@ motoboat.prototype.showLoadInfo = function (w) {
  * @param {number} num 子进程数量，默认为0，默认根据CPU核数创建子进程。
  */
 motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
+    
+    if (typeof host === 'number') {num = host; host = '0.0.0.0'; }
+
     var the = this;
     if (process.argv.indexOf('--daemon') > 0) {
     } else if (the.config.daemon) {
@@ -543,7 +547,7 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
                     if (message.type == 'load') {
                         the.showLoadInfo(message);
                     }
-                } catch (err) {}
+                } catch (err) { console.log(err); }
             });
         }
     } else if (cluster.isWorker) {
@@ -558,7 +562,9 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
                     pid  : process.pid,
                     cpu  : cpuTime,
                     mem  : process.memoryUsage(),
-                    conn : the.rundata.cur_conn
+                    conn : the.rundata.cur_conn,
+                    host : host,
+                    port : port
                 });
                 cpuLast = process.cpuUsage();
             }, 1280);
