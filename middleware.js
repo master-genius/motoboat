@@ -23,11 +23,12 @@ function middleware (options = {}) {
         },
 
         async function(rr, next) {
-            if (typeof rr.requestCall === 'function'
+            await rr.requestCall(rr);
+            /* if (typeof rr.requestCall === 'function'
                 && rr.requestCall.constructor.name === 'AsyncFunction'
             ) {
                 await rr.requestCall(rr);
-            }
+            } */
             return rr;
         }
     ];
@@ -51,24 +52,21 @@ function middleware (options = {}) {
      * }
      */
     mw.add = function (midcall, options = {}) {
-        /*
-            直接跳转下层中间件，根据匹配规则如果不匹配则执行此函数。
-        */
-       var preg = null;
-       var group = null;
-       if (typeof options === 'string') {
-           group = options;
-       } else if (options instanceof Array || options instanceof RegExp) {
-           preg = options;
-       } else if (typeof options === 'object') {
-           if (options.preg !== undefined) {
+        var preg = null;
+        var group = null;
+        if (typeof options === 'string') {
+            group = options;
+        } else if (options instanceof Array || options instanceof RegExp) {
+            preg = options;
+        } else if (typeof options === 'object') {
+            if (options.preg !== undefined) {
                preg = options.preg;
-           }
-           if (options.group !== undefined) {
+            }
+            if (options.group !== undefined) {
                group = options.group;
-           }
-       }
-
+            }
+        }
+        /* 根据匹配规则如果不匹配则跳过这一层函数。*/
         var genRealCall = function(prev_mid, group) {
             return async function(rr) {
                 if (preg) {
@@ -112,9 +110,8 @@ function middleware (options = {}) {
     mw.runMiddleware = async function (ctx) {
         try {
             var group = '*global*';
-            if (ctx.group !== '') {
-                group = ctx.group;
-            }
+            if (ctx.group !== '') { group = ctx.group; }
+
             var last = mw.mid_group[group].length-1;
             await mw.mid_group[group][last](ctx, mw.mid_group[group][last-1]);
         } catch (err) {
@@ -126,7 +123,6 @@ function middleware (options = {}) {
         }
     };
 
-
     /*
         这是最终添加的请求中间件。基于洋葱模型，
         这个中间件最先执行，所以最后会返回响应结果。
@@ -134,23 +130,35 @@ function middleware (options = {}) {
     mw.addFinalResponse = function () {
         var fr = async function(ctx, next) {
             if (!ctx.response.getHeader('content-type')) {
-                ctx.response.setHeader('content-type', 'text/html;charset=utf8');
+                ctx.response.setHeader('content-type', 'text/html;charset=utf-8');
             }
-            await next(ctx);
-
-            if (ctx.res.data === null || ctx.res.data === false) {
-                ctx.response.end();
-            } else if (typeof ctx.res.data === 'object') {
-                ctx.response.end(JSON.stringify(ctx.res.data));
-            } else if (typeof ctx.res.data === 'string') {
-                ctx.response.end(ctx.res.data, ctx.res.encoding);
-            } else {
-                ctx.response.end();
+            try {
+                await next(ctx);
+                if (ctx.res.data === null || ctx.res.data === false) {
+                    ctx.response.end();
+                } else if (typeof ctx.res.data === 'object') {
+                    ctx.response.end(JSON.stringify(ctx.res.data));
+                } else if (typeof ctx.res.data === 'string') {
+                    ctx.response.end(ctx.res.data, ctx.res.encoding);
+                } else {
+                    ctx.response.end();
+                }
+            } catch (err) {
+                throw err;
+            }
+            finally {
+                //最后会销毁对象数据，如果程序内使用了闭包永久留住ctx对象，则这些关键数据无法再访问。
+                ctx.requestCall = null;
+                ctx.request = null;
+                ctx.response = null;
+                ctx.files = null;
+                ctx.bodyparam = null;
+                ctx.rawBody = '';
+                ctx.headers = null;
             }
         };
         mw.add(fr);
     };
-
     return mw;
 }
 
