@@ -41,6 +41,11 @@ function router (options = {}) {
      * @param {string} name 请求名称，可以不填写
      */
     rt.addPath = function (api_path, method, callback, name = '') {
+        if (typeof callback !== 'function'
+            || callback.constructor.name !== 'AsyncFunction'
+        ) {
+            throw new Error(`${method} ${api_path}: callback must use async statement`);
+        }
         if (api_path[0] !== '/') { api_path = `/${api_path}`; }
 
         if (api_path.length > 1
@@ -49,7 +54,6 @@ function router (options = {}) {
         ) {
             api_path = api_path.substring(0, api_path.length-1);
         }
-
         var add_req = {
                 isArgs:  false,
                 isStar:  false,
@@ -68,8 +72,7 @@ function router (options = {}) {
         if (add_req.isStar 
             && add_req.isArgs
         ) {
-            var errinfo = `: * can not in two places at once ->  ${api_path}`;
-            throw new Error(errinfo);
+            throw new Error(`Error: ": *" can not in two places at once > ${api_path}`);
         }
 
         add_req.routeArr = api_path.split('/').filter(p => p.length > 0);
@@ -89,7 +92,6 @@ function router (options = {}) {
             default:
                 return ;
         }
-
     };
 
     rt.get = (api_path, callback, name='') => {
@@ -197,6 +199,11 @@ function router (options = {}) {
         return gt;
     };
 
+    /**
+     * findPath只是用来查找带参数的路由。
+     * @param {string} path 路由字符串。
+     * @param {string} method 请求类型。
+     */
     rt.findPath = function (path, method) {
         if (!rt.apiTable[method]) {
             return null;
@@ -229,7 +236,6 @@ function router (options = {}) {
 
             next = false;
             args = {};
-            
             if (r.isStar) {
                 for(var i=0; i<r.routeArr.length; i++) {
                     if (r.routeArr[i] == '*') {
@@ -254,7 +260,6 @@ function router (options = {}) {
 
             return {key: k, args: args};
         }
-
         return null;
     };
 
