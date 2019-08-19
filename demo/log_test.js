@@ -33,6 +33,13 @@ router.post('/p', async rr => {
     rr.res.data = rr.bodyparam;
 });
 
+router.get('/wrong', async rr => {
+    throw new Error('error test');
+});
+
+//测试路由，会抛出错误，只能添加async声明的函数。
+//router.get('/router-test', rr => { });
+
 if (process.argv.length >= 3 && process.argv[2] == '-d') {
     app.config.daemon = true;
 }
