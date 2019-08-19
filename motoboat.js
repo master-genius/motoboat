@@ -644,7 +644,7 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
             );
             logger = new console.Console({stdout:out_log, stderr: err_log}); 
         } else if (the.config.log_type == 'stdio') {
-            logger = new console.Console();
+            logger = new console.Console({stdout:process.stdout, stderr: process.stderr});
         }
         cluster.on('message', (worker, msg, handle) => {
             try {
