@@ -1,5 +1,5 @@
 /**
- * motoboat 1.5.1
+ * motoboat 1.5.2
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -18,7 +18,6 @@ const os = require('os');
 const {spawn} = require('child_process');
 //const util = require('util');
 //const crypto = require('crypto');
-
 const bodyParser = require('./bodyparser');
 const middleware = require('./middleware');
 const router = require('./router');
@@ -29,6 +28,7 @@ const helper = require('./helper');
  * @param {object} options 初始化选项，参考值如下：
  * - ignoreSlash，忽略末尾的/，默认为true
  * - debug 调试模式，默认为true
+ * - limit 限制请求最大连接数，如果是daemon接口，则是limit*进程数。
  */
 var motoboat = function (options = {}) {
     if (!(this instanceof motoboat)) {return new motoboat(); }
@@ -103,6 +103,11 @@ var motoboat = function (options = {}) {
          */
         max_conn : 1024,
     };
+    if (options.limit !== undefined && typeof options.limit === 'number') {
+        if (parseInt(options.limit) >= 0) {
+            this.limit.max_conn = options.limit;
+        }
+    }
 
     /**
      * 记录当前的运行情况
@@ -169,7 +174,6 @@ motoboat.prototype.context = function () {
         },
 
         keys : {},
-
     };
     ctx.getFile = function(name, ind = 0) {
         if (ind < 0) {return ctx.files[name] || [];}
