@@ -1,5 +1,5 @@
 /**
- * motoboat 1.6.6
+ * motoboat 1.6.7
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -43,8 +43,11 @@ const helper = require('./helper');
  * - pidFile {string} 保存Master进程PID的文件路径。
  * - logFile {string}
  * - errorLogFile {string}
- * - logType {string}
- * - pageNotFound {string}
+ * - logType {string} 日志类型，支持stdio、file、ignore
+ * - pageNotFound {string} 404页面数据
+ * - cors {string} 允许跨域的域名，*表示所有
+ * - optionsReturn {bool} 是否自动返回OPTIONS请求，默认为true。
+ * - parseUpload {bool} 自动解析上传文件数据，默认为true。
  */
 var motoboat = function (options = {}) {
     if (!(this instanceof motoboat)) {return new motoboat(options); }
@@ -59,27 +62,25 @@ var motoboat = function (options = {}) {
         //开启守护进程，守护进程用于上线部署，要使用ants接口，run接口不支持
         daemon          : false,
         /*
-            开启守护进程模式后，如果设置路径不为空字符串，
-            则会把pid写入到此文件，可用于服务管理。
+            开启守护进程模式后，如果设置路径不为空字符串，则会把pid写入到此文件，可用于服务管理。
         */
         pid_file        : '',
         log_file        : './access.log',
         error_log_file  : './error.log',
 
-        /*
-            日志类型：
-                stdio   标准输入输出，可用于调试
-                ignore  没有
-                file    文件，此时会使用log_file以及error_log_file 配置的文件路径
+        /* 日志类型：
+            stdio   标准输入输出，可用于调试
+            ignore  没有
+            file    文件，此时会使用log_file以及error_log_file 配置的文件路径
         */
         log_type        : 'ignore',
+
         //允许跨域的域名，支持 * 或 域名 或 域名 数组
         cors : null,
         //自动处理OPTIONS请求，用于处理所有路由的情况
         auto_options : false,
-        /**
-         * 如果你要更完整的记录请求日志，则需要此选项。
-         */
+
+        /** 如果你要更完整的记录请求日志，则需要此选项。*/
         global_log : false,
         //自动解析上传的文件数据
         parse_upload    : true,
@@ -147,6 +148,12 @@ var motoboat = function (options = {}) {
                   this.config.body_max_size = options.bodyMaxSize; break;
                 case 'pageNotFound':
                   this.config.page_404 = options.pageNotFound; break;
+                case 'cors':
+                  this.config.cors = options.cors; break;
+                case 'optionsReturn':
+                  this.config.auto_options = options.optionsReturn; break;
+                case 'parseUpload':
+                  this.config.parse_upload = options.parseUpload; break;
                 default:;
             }
         }
@@ -165,9 +172,7 @@ var motoboat = function (options = {}) {
         this.config.log_file = options.logFile;
         this.config.error_log_file = options.errorLogFile;
     }
-    /**
-     * 记录当前的运行情况
-     */
+    /** 记录当前的运行情况 */
     this.rundata = {
         //当前连接数
         cur_conn : 0,
