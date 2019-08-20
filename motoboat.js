@@ -1,5 +1,5 @@
 /**
- * motoboat 1.6.4
+ * motoboat 1.6.5
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -519,7 +519,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
             };
             serv = https.createServer(opts, onRequest);
             serv.on('tlsClientError', (err) => {
-                if (the.config.debug) { console.log(err); }
+                if (the.config.debug) { console.log('--DEBUG-TLS-ERROR:', err); }
             });
         } catch(err) {
             console.log(err);
