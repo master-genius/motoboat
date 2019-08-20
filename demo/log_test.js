@@ -9,7 +9,7 @@ var app = new mt({
     bodyMaxSize: 100,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    showLoadInfo: false,
+    //showLoadInfo: false,
 });
 
 /* 
