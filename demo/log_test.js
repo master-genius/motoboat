@@ -9,7 +9,7 @@ var app = new mt({
     bodyMaxSize: 100,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    //showLoadInfo: false,
+    showLoadInfo: false,
 });
 
 /* 
@@ -22,6 +22,10 @@ var {router} = app;
 
 router.get('/', async rr => {
     rr.res.data = 'success';
+});
+
+router.get('/name', async rr => {
+    rr.res.data = rr.param;
 });
 
 router.post('/p', async rr => {
