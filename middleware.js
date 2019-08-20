@@ -123,16 +123,14 @@ function middleware (options = {}) {
         }
     };
 
-    /*
-        这是最终添加的请求中间件。基于洋葱模型，
-        这个中间件最先执行，所以最后会返回响应结果。
-    */
+    /** 这是最终添加的请求中间件。基于洋葱模型，这个中间件最先执行，所以最后会返回响应结果。*/
     mw.addFinalResponse = function () {
         var fr = async function(ctx, next) {
             try {
                 var content_type = 'text/plain;charset=utf-8';
                 await next(ctx);
-                if (typeof ctx.res.data === 'object') {
+                var datatype = typeof ctx.res.data;
+                if (datatype == 'object') {
                     ctx.response.setHeader('content-type', 'text/json;charset-utf8');
                 } else if (!ctx.response.getHeader('content-type')
                     && !ctx.response.headersSent
@@ -154,11 +152,10 @@ function middleware (options = {}) {
                     }
                     ctx.response.setHeader('content-type', content_type);
                 }
-                if (ctx.res.data === null || ctx.res.data === false) {
-                    ctx.response.end();
-                } else if (typeof ctx.res.data === 'object') {
+                
+                if (datatype == 'object' || datatype == 'boolean') {
                     ctx.response.end(JSON.stringify(ctx.res.data));
-                } else if (typeof ctx.res.data === 'string') {
+                } else if (datatype == 'string') {
                     ctx.response.end(ctx.res.data, ctx.res.encoding);
                 } else {
                     ctx.response.end();
