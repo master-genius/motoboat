@@ -172,6 +172,7 @@ function middleware (options = {}) {
                 ctx.bodyparam = null;
                 ctx.rawBody = '';
                 ctx.headers = null;
+                ctx.res.data = null;
             }
         };
         mw.add(fr);
