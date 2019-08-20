@@ -2,21 +2,15 @@ const mt = require('../motoboat');
 
 var app = new mt({
     //deny: ['127.0.0.1']
-    maxIPRequest: 380,
+    maxIPRequest: 80,
     //showLoadInfo: false,
-    peerTimeLimitIP: 1,
+    peerTime: 1,
     //whiteList: ['127.0.0.1']
-    bodyMaxSize: 100,
+    bodyMaxSize: 1000000,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    //showLoadInfo: false,
+    showLoadInfo: false,
 });
-
-/* 
-app.config.log_type = 'file';
-app.config.log_file = '../tmp/access.log';
-app.config.error_log_file = '../tmp/error.log'; */
-//app.config.global_log = true;
 
 var {router} = app;
 
