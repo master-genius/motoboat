@@ -134,3 +134,57 @@ app.run(8192);
 
 比如，需要用户登录才可以操作的接口，而在登录后，还需要验证用户权限，最后是核心业务逻辑。这样的方式可以通过两个中间件来解决，在任一层中间件检测非法则直接返回，不会穿透到核心业务。并且修改和扩展都比较方便，编写中间件和核心业务处理可以独立进行。
 
+## 编写中间件
+
+中间件编写的参数有固定格式，执行下一层中间件也有固定写法。
+
+``` JavaScript
+
+/**
+ * 使用add添加中间件，中间件一定是async声明的函数，
+ * 接受两个参数，c是请求上下文，next表示下一层中间件。
+ * 要执行则只需要await next(c)。
+ * 如果检测发现不合法需要停止向内执行，则只需要不写await next(c)
+ * 
+ * add同时接受第二个参数，如果不填写则表示全局执行。
+ * 
+ * */
+serv.add(async (c, next) => {
+  c.res.data += 'I am middleware';
+  await next(c);
+  c.res.data += 'middleware end';
+}, {preg: '/mid-test'});
+
+serv.get('/mid-test', async c => {
+  c.res.data += 'This test page for middleware';
+});
+
+```
+
+访问/mid-test返回结果：
+
+```
+
+I am middleware
+This test page for middleware
+middleware end
+
+```
+
+使用add接口添加中间件，接受两个参数，第一个是请求上下文，第二个next表示下一层中间件。要执行则只需要
+
+`await next(c)`
+
+如果检测发现不合法需要停止向内执行，则只需要不写 await next(c)。
+
+add支持第二个参数，如果没有表示全局执行，所有的请求都会先执行此中间件，否则可以填写值如下：
+
+* 字符串：表示组的名称，只在路由分组内添加中间件。
+
+* JSON对象：{preg: PREG, group: GROUP}，preg表示匹配规则，group表示组名称，两个是可选项。preg的值如下：
+  * 字符串：只对此路由执行。
+  * 字符串数组：在其中的字符串都会执行。
+  * 正则表达式：匹配后执行。
+
+* 正则表达式或字符串数组：其实就是preg的匹配规则。全局添加。
+
