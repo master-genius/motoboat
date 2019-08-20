@@ -129,11 +129,31 @@ function middleware (options = {}) {
     */
     mw.addFinalResponse = function () {
         var fr = async function(ctx, next) {
-            if (!ctx.response.getHeader('content-type')) {
-                ctx.response.setHeader('content-type', 'text/html;charset=utf-8');
-            }
             try {
+                var content_type = 'text/plain;charset=utf-8';
                 await next(ctx);
+                if (typeof ctx.res.data === 'object') {
+                    ctx.response.setHeader('content-type', 'text/json;charset-utf8');
+                } else if (!ctx.response.getHeader('content-type')
+                    && !ctx.response.headersSent
+                    && ctx.res.data.length > 1
+                ) {
+                    switch (ctx.res.data[0]) {
+                        case '{':
+                        case '[':
+                            content_type = 'text/json; charset=utf-8';
+                            break;
+                        case '<':
+                            if (ctx.res.data[1] == '!') {
+                                content_type = 'text/html;charset=utf-8';
+                            } else {
+                                content_type = 'text/xml;charset=utf-8';
+                            }
+                            break;
+                        default:;
+                    }
+                    ctx.response.setHeader('content-type', content_type);
+                }
                 if (ctx.res.data === null || ctx.res.data === false) {
                     ctx.response.end();
                 } else if (typeof ctx.res.data === 'object') {
