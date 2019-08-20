@@ -1,5 +1,5 @@
 /**
- * motoboat 1.6.3
+ * motoboat 1.6.4
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -268,12 +268,11 @@ motoboat.prototype.context = function () {
         }
     };
 
-    ctx.res.status = function(stcode) {
-        if(ctx.response && ctx.response.statusCode) {
-            ctx.response.statusCode = stcode;
-            ctx.res.statusCode = stcode;
-        }
+    ctx.res.status = function(stcode = null) {
+        if (stcode === null) { return ctx.response.statusCode; }
+        if(ctx.response) { ctx.response.statusCode = stcode; }
     };
+
     ctx.moveFile = this.helper.moveFile;
 
     return ctx;
