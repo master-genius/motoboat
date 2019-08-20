@@ -1,5 +1,5 @@
 /**
- * motoboat 1.6.5
+ * motoboat 1.6.6
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -29,8 +29,8 @@ const helper = require('./helper');
  * - debug {bool} 调试模式，默认为true
  * - limit {number} 限制请求最大连接数，如果是daemon接口，则是limit*进程数。
  * - deny  {Array} IP字符串数组，表示要拒绝访问的IP。
- * - maxIPConn {number} 单个IP单元时间内最大访问次数。
- * - peerTimeLimitIP {number} 单元时间，配合maxIPConn，默认为1表示1秒钟清空一次。
+ * - maxIPRequest {number} 单个IP单元时间内最大访问次数。
+ * - peerTime {number} 单元时间，配合maxIPRequest，默认为1表示1秒钟清空一次。
  * - maxIPCache {number} 最大IP缓存个数，配合限制IP访问次数使用，默认为15000。
  * - whiteList {Array} 限制IP请求次数的白名单。
  * - timeout 超时。
@@ -118,9 +118,9 @@ var motoboat = function (options = {}) {
                     this.limit.per_ip_max_req = parseInt(options.maxIPRequest);
                   }
                   break;
-                case 'peerTimeLimitIP':
-                  if (parseInt(options.peerTimeLimitIP) > 0) {
-                      this.limit.peer_time = parseInt(options.peerTimeLimitIP);
+                case 'peerTime':
+                  if (parseInt(options.peerTime) > 0) {
+                      this.limit.peer_time = parseInt(options.peerTime);
                   }
                   break;
                 case 'maxIPCache':
@@ -162,23 +162,8 @@ var motoboat = function (options = {}) {
                 console.log(err);
             }
         }
-        if (options.logFile) {
-            try {
-                fs.accessSync(options.logFile, fs.constants.F_OK);
-                this.config.log_file = options.logFile;
-            } catch (err) {
-                console.log(err);
-            }
-        }
-
-        if (options.errorLogFile) {
-            try {
-                fs.accessSync(options.errorLogFile, fs.constants.F_OK);
-                this.config.error_log_file = options.errorLogFile;
-            } catch (err) {
-                console.log(err);
-            }
-        }
+        this.config.log_file = options.logFile;
+        this.config.error_log_file = options.errorLogFile;
     }
     /**
      * 记录当前的运行情况
