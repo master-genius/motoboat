@@ -127,30 +127,31 @@ function middleware (options = {}) {
     mw.addFinalResponse = function () {
         var fr = async function(ctx, next) {
             try {
-                var content_type = 'text/plain;charset=utf-8';
                 await next(ctx);
+
+                var content_type = 'text/plain;charset=utf-8';
                 var datatype = typeof ctx.res.data;
-                if (datatype == 'object') {
-                    ctx.response.setHeader('content-type', 'text/json;charset-utf8');
-                } else if (!ctx.response.getHeader('content-type')
-                    && !ctx.response.headersSent
-                    && ctx.res.data.length > 1
-                ) {
-                    switch (ctx.res.data[0]) {
-                        case '{':
-                        case '[':
-                            content_type = 'text/json; charset=utf-8';
-                            break;
-                        case '<':
-                            if (ctx.res.data[1] == '!') {
-                                content_type = 'text/html;charset=utf-8';
-                            } else {
-                                content_type = 'text/xml;charset=utf-8';
-                            }
-                            break;
-                        default:;
+                if (!ctx.response.headersSent) {
+                    if (datatype == 'object') {
+                        ctx.response.setHeader('content-type','text/json;charset=utf-8');
+                    } else if (!ctx.response.getHeader('content-type')
+                        && datatype == 'string' && ctx.res.data.length > 1
+                    ) {
+                        switch (ctx.res.data[0]) {
+                            case '{':
+                            case '[':
+                                content_type = 'text/json;charset=utf-8'; break;
+                            case '<':
+                                if (ctx.res.data[1] == '!') {
+                                    content_type = 'text/html;charset=utf-8';
+                                } else {
+                                    content_type = 'text/xml;charset=utf-8';
+                                }
+                                break;
+                            default:;
+                        }
+                        ctx.response.setHeader('content-type', content_type);
                     }
-                    ctx.response.setHeader('content-type', content_type);
                 }
                 
                 if (datatype == 'object' || datatype == 'boolean') {
@@ -164,7 +165,6 @@ function middleware (options = {}) {
                 throw err;
             }
             finally {
-                //最后会销毁对象数据，如果程序内使用了闭包永久留住ctx对象，则这些关键数据无法再访问。
                 ctx.requestCall = null;
                 ctx.request = null;
                 ctx.response = null;
