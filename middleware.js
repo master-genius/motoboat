@@ -118,7 +118,7 @@ function middleware (options = {}) {
             if (mw.debug) {
                 console.log(err);
             }
-            ctx.res.status(500);
+            ctx.response.statusCode = 500;
             ctx.response.end();
         }
     };
@@ -128,13 +128,14 @@ function middleware (options = {}) {
         var fr = async function(ctx, next) {
             try {
                 await next(ctx);
+                if (!ctx.response || ctx.response.finished) { return ; }
 
                 var content_type = 'text/plain;charset=utf-8';
                 var datatype = typeof ctx.res.data;
                 if (!ctx.response.headersSent) {
                     if (datatype == 'object') {
                         ctx.response.setHeader('content-type','text/json;charset=utf-8');
-                    } else if (!ctx.response.getHeader('content-type')
+                    } else if (!ctx.response.hasHeader('content-type')
                         && datatype == 'string' && ctx.res.data.length > 1
                     ) {
                         switch (ctx.res.data[0]) {
