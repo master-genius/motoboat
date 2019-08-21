@@ -9,7 +9,7 @@ var app = new mt({
     bodyMaxSize: 1000000,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    showLoadInfo: false,
+    //showLoadInfo: false,
 });
 
 var {router} = app;
@@ -28,6 +28,10 @@ router.post('/p', async rr => {
 
 router.get('/wrong', async rr => {
     throw new Error('error test');
+});
+
+router.get('/end', async rr => {
+    rr.response.end('end-test');
 });
 
 //测试路由，会抛出错误，只能添加async声明的函数。
