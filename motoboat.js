@@ -1,5 +1,5 @@
 /**
- * motoboat 1.6.9
+ * motoboat 1.7.1
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -186,13 +186,17 @@ var motoboat = function (options = {}) {
     this.parseUploadData = bodyParser.parseUploadData;
     this.parseSingleFile = bodyParser.parseSingleFile;
     
-    this.middleware = middleware(options);
-    this.add = this.middleware.add;
-    this.runMiddleware = this.middleware.runMiddleware;
-    this.addFinalResponse = this.middleware.addFinalResponse;
-
     this.router = router(options);
     this.group = this.router.group;
+
+    this.middleware = middleware(options);
+    this.add = function (midcall, options = {}) {
+        return this.middleware.add(midcall, this.router.apiGroupTable, options);
+    };
+    this.runMiddleware = this.middleware.runMiddleware;
+    this.addFinalResponse = function () {
+        this.middleware.addFinalResponse(this.router.apiGroupTable);
+    };
 };
 
 motoboat.prototype.context = function () {
@@ -232,7 +236,7 @@ motoboat.prototype.context = function () {
             encoding : 'utf8'
         },
 
-        keys : {},
+        box : {},
     };
     ctx.getFile = function(name, ind = 0) {
         if (ind < 0) {return ctx.files[name] || [];}
@@ -395,17 +399,15 @@ motoboat.prototype.connFilter = function(sock) {
 };
 
 /**
- * 开始监听请求，此函数根据配置等信息做处理后调用listen
- * @param {number} port 端口
- * @param {string} host IP地址
+ * request事件的回调函数。
+ * @param {req} http.IncomingMessage
+ * @param {res} http.ServerResponse
  */
-motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
-    if (this.limit.per_ip_max_req > 0) {
-        this.limitIPConnListen();
-    }
-    this.addFinalResponse();
+motoboat.prototype.onRequest = function (req, res) {
     var the = this;
-    var onRequest = (req, res) => {
+    //request事件回调函数，此函数打包了比较多的处理，但是没有分离出更多的函数。
+    //如果路由不存在或方法不支持，会直接返回错误而不会继续创建请求上下文的过程。
+    var callback = (req, res) => {
         req.on('abort', (err) => {res.statusCode = 400; res.end();});
         req.on('error', (err) => {
             req.abort();
@@ -434,14 +436,12 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         var urlobj = url.parse(req.url, true);
         if (urlobj.pathname == '') { urlobj.pathname = '/'; }
 
-        var real_path = '';
-        real_path = the.router.findRealPath(urlobj.pathname, req.method);
+        var real_path = the.router.findRealPath(urlobj.pathname, req.method);
         if (real_path === null) {
             res.statusCode = 404;
             res.end(the.config.page_404);
             return ;
         }
-
         var ctx = the.context();
         ctx.method = req.method;
         ctx.url.host = req.headers['host'];
@@ -449,25 +449,20 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         ctx.url.href = urlobj.href;
         ctx.url.origin = urlobj.origin;
         ctx.ip = remote_ip;
-
         ctx.request = req;
         ctx.response = res;
         ctx.headers = req.headers;
         ctx.path = urlobj.pathname;
-        //ctx.routepath = real_path.key; ctx.args = real_path.args;
         ctx.param = urlobj.query;
         the.router.setContext(real_path, ctx);
-        /*
-         跨域资源共享标准新增了一组HTTP首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
-         并且规范要求，对那些可能会对服务器资源产生改变的请求方法，
-         需要先发送OPTIONS请求获取是否允许跨域以及允许的方法。
-        */
+        
         if (req.method == 'GET' || req.method == 'OPTIONS') {
             req.on('data', data => {
                 res.statusCode = 400;
                 res.end('bad request');
                 req.abort();
             });
+            //检测是否为全局返回OPTIONS请求。
             if (req.method == 'OPTIONS') {
                 res.setHeader('Access-control-allow-methods', the.methodList);
                 if (the.config.cors) {
@@ -491,7 +486,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
                     res.end(`Body too large,limit:${the.config.body_max_size/1000}Kb`);
                     req.destroy(new Error(`body too large`));
                 }
-            }); 
+            });
         }
         req.on('end',() => {
             if (req.aborted || res.finished) { return; }
@@ -499,15 +494,29 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
         });
     };
 
-    var opts = {};
+    return callback;
+};
+
+/**
+ * 开始监听请求，此函数根据配置等信息做处理后调用listen
+ * @param {number} port 端口
+ * @param {string} host IP地址
+ */
+motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
+    if (this.limit.per_ip_max_req > 0) {
+        this.limitIPConnListen();
+    }
+    this.addFinalResponse();
+    var the = this;
     var serv = null;
-    if (the.config.https) {
+
+    if (this.config.https) {
         try {
-            opts = {
-                key  : fs.readFileSync(the.config.key),
-                cert : fs.readFileSync(the.config.cert)
+            var opts = {
+                key  : fs.readFileSync(this.config.key),
+                cert : fs.readFileSync(this.config.cert)
             };
-            serv = https.createServer(opts, onRequest);
+            serv = https.createServer(opts, this.onRequest());
             serv.on('tlsClientError', (err) => {
                 if (the.config.debug) { console.log('--DEBUG-TLS-ERROR:', err); }
             });
@@ -516,17 +525,14 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
             process.exit(-1);
         }
     } else {
-        serv = http.createServer(onRequest);
+        serv = http.createServer(this.onRequest());
     }
 
     serv.on('clientError', (err, sock) => {sock.end("Bad Request");});
-    //限制连接数量，单个IP最大请求数量。
-    serv.on('connection', (sock) => {
-        return the.connFilter(sock);
-    });
-
-    serv.setTimeout(the.config.timeout);
+    serv.on('connection', (sock) => { return the.connFilter(sock); });
+    serv.setTimeout(this.config.timeout);
     serv.listen(port, host);
+
     return serv;
 };
 
@@ -548,11 +554,9 @@ motoboat.prototype.showLoadInfo = function (w) {
             }
             return 0;
         });
-        if (!this.config.daemon) {
-            console.clear();
-        }
-        var oavg = os.loadavg();
+        if (!this.config.daemon) { console.clear(); }
 
+        var oavg = os.loadavg();
         var oscpu = `  CPU Loadavg  1m: ${oavg[0].toFixed(2)}  5m: ${oavg[1].toFixed(2)}  15m: ${oavg[2].toFixed(2)}\n`;
 
         var cols = '  PID       CPU       MEM       CONN\n';
@@ -575,10 +579,8 @@ motoboat.prototype.showLoadInfo = function (w) {
         cols += `  Listen ${this.loadInfo[0].host}:${this.loadInfo[0].port}\n`;
         if (this.config.daemon) {
             try {
-                fs.writeFileSync('./load-info.log',
-                    oscpu+cols, {encoding:'utf8'}
-                );
-            } catch (err) {}
+                fs.writeFileSync('./load-info.log', oscpu+cols, {encoding:'utf8'});
+            } catch (err) { }
         } else {
             console.log(oscpu+cols);
         }
@@ -597,7 +599,7 @@ motoboat.prototype.showLoadInfo = function (w) {
 motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
 
     if (typeof host === 'number') {num = host; host = '0.0.0.0'; }
-    
+
     var the = this;
 
     if (process.argv.indexOf('--daemon') > 0) {
@@ -605,8 +607,7 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
         var args = process.argv.slice(1);
         args.push('--daemon');
         const serv = spawn (
-                process.argv[0],
-                args,
+                process.argv[0], args,
                 {detached: true, stdio: ['ignore', 1, 2]}
             );
         serv.unref();
@@ -614,7 +615,7 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
     }
     
     if (cluster.isMaster) {
-        if (num <= 0) {num = os.cpus().length;}
+        if (num <= 0) { num = os.cpus().length; }
 
         if (typeof the.config.pid_file === 'string'
             && the.config.pid_file.length > 0
@@ -633,30 +634,31 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
             );
             logger = new console.Console({stdout:out_log, stderr: err_log}); 
         } else if (the.config.log_type == 'stdio') {
-            logger = new console.Console({stdout:process.stdout, stderr: process.stderr});
+            var opts = {stdout:process.stdout, stderr: process.stderr};
+            logger = new console.Console(opts);
         }
+
         cluster.on('message', (worker, msg, handle) => {
             try {
-                if(msg.type == 'log' && msg.success) {
-                    logger.log(JSON.stringify(msg));
-                } else if (msg.type == 'log' && !msg.success) {
-                    logger.error(JSON.stringify(msg));
+                switch(msg.type) {
+                    case 'log':
+                        msg.success 
+                        ? logger.log(JSON.stringify(msg)) 
+                        : logger.error(JSON.stringify(msg));
+                        break;
+                    case 'load':
+                        the.showLoadInfo(msg); break;
+                    default:;
                 }
-
-                if (msg.type == 'load') { the.showLoadInfo(msg); }
             } catch (err) { console.log(err); }
         });
 
-        for(var i=0; i<num; i++) {
-            cluster.fork();
-        }
+        for(var i=0; i<num; i++) { cluster.fork(); }
+
         if (cluster.isMaster) {
-            /** 检测子进程数量，如果有子进程退出则fork出差值的子进程，维持在一个恒定的值。*/
             setInterval(() => {
                 var num_dis = num - Object.keys(cluster.workers).length;
-                for(var i=0; i<num_dis; i++) {
-                    cluster.fork();
-                }
+                for(var i=0; i<num_dis; i++) { cluster.fork(); }
             }, 2000);
         }
     } else if (cluster.isWorker) {
@@ -682,3 +684,12 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
 };
 
 module.exports = motoboat;
+
+/**
+ * 一些你可能想要知道的：
+ * 跨域资源共享标准新增了一组HTTP首部字段，允许服务器声明哪些源站通过浏览器有权限访问哪些资源。
+ * 并且规范要求，对那些可能会对服务器资源产生改变的请求方法，
+ * 需要先发送OPTIONS请求获取是否允许跨域以及允许的方法。
+ * 因此，为了更方便的处理，添加了全局处理OPTIONS请求的过程。
+ * 
+*/

@@ -17,33 +17,26 @@ function middleware (options = {}) {
         mw.debug = options.debug;
     }
 
+    mw.globalKey = '*GLOBAL*';
+
     mw.mid_chain = [
         async function(ctx) {
             return ;
         },
 
-        async function(rr, next) {
-            await rr.requestCall(rr);
-            /* if (typeof rr.requestCall === 'function'
-                && rr.requestCall.constructor.name === 'AsyncFunction'
-            ) {
-                await rr.requestCall(rr);
-            } */
-            return rr;
+        async function (ctx) {
+            return await ctx.requestCall(ctx);
         }
     ];
 
-    /*
-        支持路由分组的解决方案（不改变已有代码即可使用）：
-    */
-    mw.mid_group = {
-        '*global*' : [mw.mid_chain[0], mw.mid_chain[1]]
-    };
+    mw.mid_group = {};
+    mw.mid_group[mw.globalKey] = [ mw.mid_chain[0], mw.mid_chain[1] ];
 
     /**
      * 添加中间件。
      * @param {async function} midcall 接受参数(ctx, next)。
      * @param {string|RegExp|Array|object} options 选项。
+     * @param {object} groupTable router记录的路由分组。
      * options如果是字符串则表示针对分组添加中间件，如果是数组或正则表达式则表示匹配规则。
      * 如果你想针对某一分组添加中间件，同时还要设置匹配规则，则可以使用以下形式：
      * {
@@ -51,7 +44,7 @@ function middleware (options = {}) {
      *   group : string
      * }
      */
-    mw.add = function (midcall, options = {}) {
+    mw.add = function (midcall, groupTable, options = {}) {
         var preg = null;
         var group = null;
         if (typeof options === 'string') {
@@ -68,7 +61,7 @@ function middleware (options = {}) {
         }
         /* 根据匹配规则如果不匹配则跳过这一层函数。*/
         var genRealCall = function(prev_mid, group) {
-            return async function(rr) {
+            return async function (rr) {
                 if (preg) {
                     if (
                         (typeof preg === 'string' && preg !== rr.routepath)
@@ -77,12 +70,10 @@ function middleware (options = {}) {
                         ||
                         (preg instanceof Array && preg.indexOf(rr.routepath) < 0)
                     ) {
-                        await mw.mid_group[group][prev_mid](rr);
-                        return rr;
+                        return await mw.mid_group[group][prev_mid](rr);
                     }
                 }
-                await midcall(rr, mw.mid_group[group][prev_mid]);
-                return rr;
+                return await midcall(rr, mw.mid_group[group][prev_mid]);
             };
         
         };
@@ -90,16 +81,29 @@ function middleware (options = {}) {
         var last = 0;
         if (group) {
             if (!mw.mid_group[group]) {
-                mw.mid_group[group] = [mw.mid_chain[0], mw.mid_chain[1]];
+                mw.initGroup(group);
             }
             last = mw.mid_group[group].length - 1;
             mw.mid_group[group].push(genRealCall(last, group));
         } else {
             //全局添加中间件
-            for(var k in mw.mid_group) {
+            for(var k in groupTable) {
+                if (mw.mid_group[k] === undefined) {
+                    mw.initGroup(k);
+                }
                 last = mw.mid_group[k].length - 1;
                 mw.mid_group[k].push(genRealCall(last, k));
             }
+            last = mw.mid_group[mw.globalKey].length - 1;
+            mw.mid_group[mw.globalKey].push(genRealCall(last, mw.globalKey));
+        }
+    };
+
+    //如果某一分组添加时，已经有全局中间件，需要先把全局中间件添加到此分组。
+    mw.initGroup = function (group) {
+        mw.mid_group[group] = [];
+        for(var i=0; i < mw.mid_group[mw.globalKey].length; i++) {
+            mw.mid_group[group].push(mw.mid_group[mw.globalKey][i]);
         }
     };
 
@@ -109,74 +113,68 @@ function middleware (options = {}) {
      */
     mw.runMiddleware = async function (ctx) {
         try {
-            var group = '*global*';
-            if (ctx.group !== '') { group = ctx.group; }
-
+            var group = mw.globalKey;
+            if (ctx.group != '' && mw.mid_group[ctx.group] !== undefined) {
+                group = ctx.group;
+            }
             var last = mw.mid_group[group].length-1;
             await mw.mid_group[group][last](ctx, mw.mid_group[group][last-1]);
         } catch (err) {
-            if (mw.debug) {
-                console.log(err);
-            }
+            if (mw.debug) { console.log('--DEBUG--RESPONSE--:',err); }
             ctx.response.statusCode = 500;
             ctx.response.end();
+        } finally {
+            ctx.requestCall = null;
+            ctx.request = null;
+            ctx.response = null;
+            ctx.files = null;
+            ctx.bodyparam = null;
+            ctx.rawBody = '';
+            ctx.headers = null;
+            ctx.res.data = null;
         }
     };
 
     /** 这是最终添加的请求中间件。基于洋葱模型，这个中间件最先执行，所以最后会返回响应结果。*/
-    mw.addFinalResponse = function () {
+    mw.addFinalResponse = function (groupTable) {
         var fr = async function(ctx, next) {
-            try {
-                await next(ctx);
-                if (!ctx.response || ctx.response.finished) { return ; }
+            await next(ctx);
+            if (!ctx.response || ctx.response.finished) { return ; }
 
-                var content_type = 'text/plain;charset=utf-8';
-                var datatype = typeof ctx.res.data;
-                if (!ctx.response.headersSent) {
-                    if (datatype == 'object') {
-                        ctx.response.setHeader('content-type','text/json;charset=utf-8');
-                    } else if (!ctx.response.hasHeader('content-type')
-                        && datatype == 'string' && ctx.res.data.length > 1
-                    ) {
-                        switch (ctx.res.data[0]) {
-                            case '{':
-                            case '[':
-                                content_type = 'text/json;charset=utf-8'; break;
-                            case '<':
-                                if (ctx.res.data[1] == '!') {
-                                    content_type = 'text/html;charset=utf-8';
-                                } else {
-                                    content_type = 'text/xml;charset=utf-8';
-                                }
-                                break;
-                            default:;
-                        }
-                        ctx.response.setHeader('content-type', content_type);
+            var content_type = 'text/plain;charset=utf-8';
+            var datatype = typeof ctx.res.data;
+            if (!ctx.response.headersSent) {
+                if (datatype == 'object') {
+                    ctx.response.setHeader('content-type','text/json;charset=utf-8');
+                } else if (!ctx.response.hasHeader('content-type')
+                    && datatype == 'string' && ctx.res.data.length > 1
+                ) {
+                    switch (ctx.res.data[0]) {
+                        case '{':
+                        case '[':
+                            content_type = 'text/json;charset=utf-8'; break;
+                        case '<':
+                            if (ctx.res.data[1] == '!') {
+                                content_type = 'text/html;charset=utf-8';
+                            } else {
+                                content_type = 'text/xml;charset=utf-8';
+                            }
+                            break;
+                        default:;
                     }
+                    ctx.response.setHeader('content-type', content_type);
                 }
-                
-                if (datatype == 'object' || datatype == 'boolean') {
-                    ctx.response.end(JSON.stringify(ctx.res.data));
-                } else if (datatype == 'string') {
-                    ctx.response.end(ctx.res.data, ctx.res.encoding);
-                } else {
-                    ctx.response.end();
-                }
-            } catch (err) {
-                throw err;
             }
-            finally {
-                ctx.requestCall = null;
-                ctx.request = null;
-                ctx.response = null;
-                ctx.files = null;
-                ctx.bodyparam = null;
-                ctx.rawBody = '';
-                ctx.headers = null;
-                ctx.res.data = null;
+            
+            if (datatype == 'object' || datatype == 'boolean') {
+                ctx.response.end(JSON.stringify(ctx.res.data));
+            } else if (datatype == 'string') {
+                ctx.response.end(ctx.res.data, ctx.res.encoding);
+            } else {
+                ctx.response.end();
             }
         };
-        mw.add(fr);
+        mw.add(fr, groupTable, {});
     };
     return mw;
 }
