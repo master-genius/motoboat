@@ -1,5 +1,5 @@
 
-![-](images/motoboat_test.png)
+![-](images/motoboat-load-info.png)
 
 # motoboat
 
@@ -52,7 +52,7 @@ app.run(8192);
 
 支持GET、POST、PUT、DELETE、OPTIONS请求，分别有对应的小写的方法用于添加路由。
 
-## 处理多个路由
+## 处理多个路径
 
 ``` JavaScript
 const mot = require('motoboat');
@@ -122,6 +122,58 @@ app.run(8192);
 
 ```
 
+## 路由更多内容
+
+路由就是根据域名后的路径去查找并执行对应的函数。框架本身路由的添加方式很简单，支持使用:表示变量，使用*匹配任意路径。并且路由参数只是以字符串形式解析，并不做各种类型转换的处理。解析后的参数保存在args字段。框架支持的请求方法是：GET、POST、PUT、DELETE、OPTIONS。分别有对应小写的方法。
+
+``` JavaScript
+
+/*
+  name可以是任意字符串，访问形式:
+    /page/index.html
+    /page/a.html
+*/
+serv.get('/page/:name', async c => {
+  //解析后的参数保存在c.args
+  c.res.data = c.args['name'];
+});
+
+serv.get('/login/:username/:passwd', async c => {
+  var {username, passwd} = c.args;
+  //....
+});
+
+serv.options('/*', async c => {
+  //接管所有的OPTIONS请求
+  //...
+});
+
+/**
+ * 路由分组，所有的路径都会带上/api
+ */
+var api = router.group('/api');
+//实际请求路径/api/a
+api.get('/a', async c => {
+    //...
+});
+
+api.post('/a', async c => {
+    //...
+});
+
+//同时处理多个方法
+api.map(['GET','POST','PUT'], '/x', async c => {
+    //...
+});
+
+//请求命名
+router.put('/who', async c => {
+    //通过c.name获取名称
+    c.res.data = c.name;
+}, 'Albert·Einstein');
+
+```
+
 ## 中间件
 
 这个是框架设计的核心，实际上，请求处理过程都是中间件模式层层调用。通过中间件模式，可以把复杂的业务逻辑更好地进行分离，并进行灵活的拼接调用。中间件的工作方式可以用下图描述。
@@ -140,6 +192,8 @@ app.run(8192);
 
 ``` JavaScript
 
+var {router} = serv;
+
 /**
  * 使用add添加中间件，中间件一定是async声明的函数，
  * 接受两个参数，c是请求上下文，next表示下一层中间件。
@@ -155,7 +209,7 @@ serv.add(async (c, next) => {
   c.res.data += 'middleware end';
 }, {preg: '/mid-test'});
 
-serv.get('/mid-test', async c => {
+router.get('/mid-test', async c => {
   c.res.data += 'This test page for middleware';
 });
 
@@ -187,4 +241,188 @@ add支持第二个参数，如果没有表示全局执行，所有的请求都�
   * 正则表达式：匹配后执行。
 
 * 正则表达式或字符串数组：其实就是preg的匹配规则。全局添加。
+
+
+以下是一个更加复杂的示例：
+
+``` JavaScript
+//分组名称如果没有最开始的/则会自动加上，并且会去掉末尾的/
+var api = router.group('/api');
+
+//只对api分组添加中间件
+serv.add(async (c, next) => {
+    //...
+}, api.groupName);
+
+//只在api分组添加中间件，并且只有路由是/api/what时才会执行此中间件。
+serv.add(async (c, next) => {
+    //...
+}, {group: api.groupName, preg: `${api.groupName}/what`});
+
+router.get('/great', async c => {
+  c.res.data += 'This test page for middleware';
+});
+
+api.get('/nice', async c => {
+  c.res.data += 'This test page for middleware, group: '+c.group;
+});
+
+api.get('/what', async c => {
+  c.res.data += 'what?';
+});
+
+```
+
+## 请求上下文
+
+``` JavaScript
+var ctx = {
+    method      : '',       //请求方法类型
+    url         : {
+        host        : '',   //示例，w3xm.top或a.com:8119
+        protocol    : '',   //协议，http:或https:
+        href        : '',   // /a?name=q
+        origin      : '',   // 原始的url
+        port        : '',   // 端口
+    },
+    ip          : '',   //远程客户端IP
+    path        : '',   //用户请求的路径，是域名后的部分，不包括查询字符串
+    name        : '',   //请求命名，默认为空
+    headers     : {},   //请求头信息
+
+    /** 
+     * 实际执行请求的路径，如果路径是带参数的，则会与path不同，
+     * 如果带参数路由是/page/:name，当请求 /page/home时，
+     * path属性的值是/page/home，routepath的值是/page/:name。
+     * */
+    routepath   : '/',  
+
+    /** 
+     * 路由参数，比如/login/:user/:pass，实际请求/login/hello/world。
+     * 则路由参数被解析到args：
+     *  {
+     *     "user" : "hello",
+     *     "pass" : "world"
+     *  }
+    */
+    args        : {},
+
+    param       : {}, //查询字符串参数，就是URL中?后面的部分
+    bodyparam   : {}, //POST或PUT请求提交的表单，也可能是其它格式的文本而不是JSON对象。
+    isUpload    : false, //是不是上传文件。
+    group       : '', //所属路由分组。
+    /** 
+     * 原始的Body数据，是没有解析的格式，上传文件自动解析后会清空，
+     * 如果不是上传文件则会保留，选项设置不自动解析上传文件数据可以保存此数据。
+    */
+    rawBody     : '', 
+    /** 
+     * 解析后的文件存储在此，格式如下：
+     *  {
+     *    'image' : [
+     *      {filename:FILENAME, 'content-type': CONTENT_TYPE, data:'BINARY DATA'},
+     *         ...
+     *    ],
+     *    'audio' : [
+     *      {filename:FILENAME, 'content-type': CONTENT_TYPE, data:'BINARY DATA'},
+     *      ...
+     *    ]
+     *  }
+     * 
+    */
+    files       : {}, 
+    requestCall : null, //指向要执行请求的函数。
+    extName     : helper.extName, //获取文件扩展名
+    genFileName : helper.genFileName, //生成唯一文件名
+
+    /**
+     * http.Server的request事件传递的参数：
+     *   request <http.IncomingMessage>
+     *   response <http.ServerResponse>
+     * 多数情况不需要直接调用response的end方法，可以调用write，最后框架会自动end。
+     * 不过这不是严格限制的，也不涉及所谓的优雅与粗暴，既然信息提供了，怎么用是开发者的事。
+     */
+    request     : null, 
+    response    : null, //很多时候还要使用response提供的其他方法的。
+
+    /**
+     * 简单的响应对象，仅仅是为了返回数据。
+     */
+    res         : {
+        data : '',
+        encoding : 'utf8' //返回数据的编码类型，如果是图片可以设置为binary。
+    },
+
+    keys : {},
+};
+//如果是上传文件会用到，用于获取文件。
+ctx.getFile = function(name, ind = 0) {
+    if (ind < 0) {return ctx.files[name] || [];}
+
+    if (ctx.files[name] === undefined) {return null;}
+    
+    if (ind >= ctx.files[name].length) {return null;}
+
+    return ctx.files[name][ind];
+};
+//对response的封装，可以直接使用response。
+ctx.res.setHeader = function (name, val) {
+    ctx.response.setHeader(name, val);
+};
+//这个write函数会把数据附加到res.data上，然后最终返回。
+ctx.res.write = function(data) {
+    if (typeof data === 'string') {
+        ctx.res.data += data;
+    } else if (data instanceof Buffer) {
+        ctx.res.data += data.toString(ctx.res.encoding);
+    } else if (typeof data === 'number') {
+        ctx.res.data += data.toString();
+    }
+};
+//设置状态码
+ctx.res.status = function(stcode = null) {
+    if (stcode === null) { return ctx.response.statusCode; }
+    if(ctx.response) { ctx.response.statusCode = stcode; }
+};
+//移动文件到指定位置。
+ctx.moveFile = helper.moveFile;
+
+```
+
+## RESTFul
+
+这个无需多说了，按照RESTFul规则设计的接口会比较简单，并且充分能够利用HTTP的语义。
+
+如果不按照这种方式设计，仅仅使用GET和POST，甚至仅仅使用POST请求都可以，已有的项目不少也是这样的。只是这样的话，接口路径设计会很麻烦。
+
+``` JavaScript
+
+var {router} = serv;
+
+//获取具体内容
+router.get('/content/:id', async c => {
+    //...
+});
+
+//获取内容列表
+router.get('/content', async c => {
+    //...
+});
+
+//创建
+router.post('/content', async c => {
+    //...
+});
+
+//根据ID更新指定资源
+router.put('/content/:id', async c => {
+    //...
+});
+
+//删除指定资源
+router.delete('/content/:id', async c => {
+    //...
+});
+
+```
 
