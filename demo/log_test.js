@@ -1,3 +1,6 @@
+'use strict';
+
+const fs = require('fs');
 const mt = require('../motoboat');
 
 var app = new mt({
@@ -9,7 +12,9 @@ var app = new mt({
     bodyMaxSize: 1000000,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    //showLoadInfo: false,
+    showLoadInfo: false,
+    globalLog:true,
+    logType: 'stdio'
 });
 
 var {router} = app;
@@ -32,6 +37,28 @@ router.get('/wrong', async rr => {
 
 router.get('/end', async rr => {
     rr.response.end('end-test');
+});
+
+var quantum = router.group('quantum');
+quantum.get('/what', async c => {
+    try {
+        c.res.data = await new Promise((rv, rj) => {
+            fs.readFile('quantum', {encoding:'utf8'}, (err, data) => {
+                if (err) {rj(err);}
+                rv(data);
+            });
+        });
+    } catch (err) {
+        rr.res.data = err.message;
+    }
+    //c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
+});
+
+app.add(async (ctx, next) => {
+    var start_time = Date.now();
+    await next(ctx);
+    var end_time = Date.now();
+    console.log(ctx.path, end_time - start_time);
 });
 
 //测试路由，会抛出错误，只能添加async声明的函数。

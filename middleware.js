@@ -20,17 +20,13 @@ function middleware (options = {}) {
     mw.globalKey = '*GLOBAL*';
 
     mw.mid_chain = [
-        async function(ctx) {
-            return ;
-        },
-
         async function (ctx) {
             return await ctx.requestCall(ctx);
         }
     ];
 
     mw.mid_group = {};
-    mw.mid_group[mw.globalKey] = [ mw.mid_chain[0], mw.mid_chain[1] ];
+    mw.mid_group[mw.globalKey] = [ mw.mid_chain[0] ];
 
     /**
      * 添加中间件。
@@ -118,7 +114,7 @@ function middleware (options = {}) {
                 group = ctx.group;
             }
             var last = mw.mid_group[group].length-1;
-            await mw.mid_group[group][last](ctx, mw.mid_group[group][last-1]);
+            await mw.mid_group[group][last](ctx);
         } catch (err) {
             if (mw.debug) { console.log('--DEBUG--RESPONSE--:',err); }
             ctx.response.statusCode = 500;

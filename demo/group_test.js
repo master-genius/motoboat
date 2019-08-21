@@ -2,17 +2,15 @@
 
 const awix = require('../motoboat.js');
 
-var ant = new awix();
+var ant = new awix({
+    showLoadInfo: false,
+    cors: '*',
+    optionsReturn: true,
+});
 
-ant.config.body_max_size = 600000000;
-//ant.config.log_type = 'stdio';
-ant.config.auto_options = true;
-ant.config.cors = '*';
-//ant.config.show_load_info = true;
+var {router} = ant;
 
-var {router, group} = ant;
-
-var api = group('/api');
+var api = router.group('/api');
 
 api.get('/a', async rr => {
     rr.res.data = {
@@ -65,6 +63,29 @@ router.get('/', async rr => {
     };
     rr.res.data = api_list;
 });
+
+var great = router.group('great');
+
+great.get('/', async c => {
+    c.res.data = 'great';
+});
+
+great.get('/:name', async c => {
+    c.res.data = c.args;
+}, 'name');
+
+ant.add(async (ctx, next) => {
+    console.log('test for group');
+    await next(ctx);
+});
+
+ant.add(async (ctx, next) => {
+    console.log('test for great');
+    await next(ctx);
+}, great.groupName);
+
+console.log(ant.router);
+console.log(ant.middleware);
 
 //支持IPv6地址
 ant.run(8098, '::');
