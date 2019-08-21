@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.1
+ * motoboat 1.7.2
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -20,6 +20,7 @@ const {spawn} = require('child_process');
 //const crypto = require('crypto');
 const bodyParser = require('./bodyparser');
 const middleware = require('./middleware');
+const midmin = require('./middleware-min');
 const router = require('./router');
 const helper = require('./helper');
 
@@ -48,6 +49,7 @@ const helper = require('./helper');
  * - cors {string} 允许跨域的域名，*表示所有
  * - optionsReturn {bool} 是否自动返回OPTIONS请求，默认为true。
  * - parseUpload {bool} 自动解析上传文件数据，默认为true。
+ * - useMinMiddleware {bool} 使用最简中间件模式，这个模式不支持路由分组以及规则匹配。默认为false。
  */
 var motoboat = function (options = {}) {
     if (!(this instanceof motoboat)) {return new motoboat(options); }
@@ -94,6 +96,7 @@ var motoboat = function (options = {}) {
         page_404 : 'page not found',
         show_load_info : true,
         debug : true,
+        min_mid: false,
     };
     this.req_ip_table = {}; // 记录IP访问次数，用于一段时间内的单个IP访问次数限制。
     this.limit = {
@@ -154,6 +157,8 @@ var motoboat = function (options = {}) {
                   this.config.auto_options = options.optionsReturn; break;
                 case 'parseUpload':
                   this.config.parse_upload = options.parseUpload; break;
+                case 'useMinMiddleware':
+                  this.config.min_mid = options.useMinMiddleware; break;
                 default:;
             }
         }
@@ -189,14 +194,20 @@ var motoboat = function (options = {}) {
     this.router = router(options);
     this.group = this.router.group;
 
-    this.middleware = middleware(options);
-    this.add = function (midcall, options = {}) {
-        return this.middleware.add(midcall, this.router.apiGroupTable, options);
-    };
+    if (!this.config.min_mid) {
+        this.middleware = middleware(options);
+        this.add = function (midcall, options = {}) {
+            return this.middleware.add(midcall, this.router.apiGroupTable, options);
+        };
+        this.addFinalResponse = function () {
+            this.middleware.addFinalResponse(this.router.apiGroupTable);
+        };
+    } else {
+        this.middleware = midmin(options);
+        this.add = this.middleware.add;
+        this.addFinalResponse = this.middleware.addFinalResponse;
+    }
     this.runMiddleware = this.middleware.runMiddleware;
-    this.addFinalResponse = function () {
-        this.middleware.addFinalResponse(this.router.apiGroupTable);
-    };
 };
 
 motoboat.prototype.context = function () {
