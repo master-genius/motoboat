@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.5
+ * motoboat 1.7.6
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -23,6 +23,7 @@ const middleware = require('./middleware');
 const midmin = require('./middleware-min');
 const router = require('./router');
 const helper = require('./helper');
+const context = require('./context');
 
 /**
  * @param {object} options 初始化选项，参考值如下：
@@ -207,79 +208,8 @@ var motoboat = function (options = {}) {
         this.addFinalResponse = this.middleware.addFinalResponse;
     }
     this.runMiddleware = this.middleware.runMiddleware;
-};
 
-motoboat.prototype.context = function () {
-    var ctx = {
-        method      : '',
-        url         : {
-            host        : '',
-            protocol    : '',
-            href        : '',
-            origin      : '',
-            port        : '',
-        },
-        ip          : '',
-        //实际的访问路径
-        path        : '',
-        name        : '',
-        headers     : {},
-        //实际执行请求的路径
-        routepath   : '/',
-        args        : {},
-        param       : {},
-        bodyparam   : {},
-        isUpload    : false,
-        group       : '',
-        rawBody     : '',
-        files       : {},
-        requestCall : null,
-        extName     : this.helper.extName,
-        genFileName : this.helper.genFileName,
-
-        request     : null,
-        response    : null,
-
-        res         : {
-            statusCode : 200,
-            data : '',
-            encoding : 'utf8'
-        },
-
-        box : {},
-    };
-    ctx.getFile = function(name, ind = 0) {
-        if (ind < 0) {return ctx.files[name] || [];}
-
-        if (ctx.files[name] === undefined) {return null;}
-        
-        if (ind >= ctx.files[name].length) {return null;}
-
-        return ctx.files[name][ind];
-    };
-
-    ctx.res.setHeader = function (name, val) {
-        ctx.response.setHeader(name, val);
-    };
-
-    ctx.res.write = function(data) {
-        if (typeof data === 'string') {
-            ctx.res.data += data;
-        } else if (data instanceof Buffer) {
-            ctx.res.data += data.toString(ctx.res.encoding);
-        } else if (typeof data === 'number') {
-            ctx.res.data += data.toString();
-        }
-    };
-
-    ctx.res.status = function(stcode = null) {
-        if (stcode === null) { return ctx.response.statusCode; }
-        if(ctx.response) { ctx.response.statusCode = stcode; }
-    };
-
-    ctx.moveFile = this.helper.moveFile;
-
-    return ctx;
+    this.context = context;
 };
 
 /**
@@ -455,7 +385,6 @@ motoboat.prototype.onRequest = function (req, res) {
         ctx.url.host = req.headers['host'];
         ctx.url.protocol = urlobj.protocol;
         ctx.url.href = urlobj.href;
-        ctx.url.origin = urlobj.origin;
         ctx.ip = remote_ip;
         ctx.request = req;
         ctx.response = res;
@@ -600,7 +529,37 @@ motoboat.prototype.showLoadInfo = function (w) {
         this.loadInfo.push(w);
     }
 };
+/** 
+ * 监听消息事件，Master进程调用。
+*/
+motoboat.prototype.daemonMessage = function () {
+    var the = this;
+    var logger = null;
+    if (the.config.log_type == 'file') {
+        var out_log = fs.createWriteStream(the.config.log_file, {flags: 'a+'});
+        var err_log = fs.createWriteStream(the.config.error_log_file, {flags: 'a+'});
 
+        logger = new console.Console({stdout:out_log, stderr: err_log}); 
+    } else if (the.config.log_type == 'stdio') {
+        var opts = {stdout:process.stdout, stderr: process.stderr};
+        logger = new console.Console(opts);
+    }
+
+    cluster.on('message', (worker, msg, handle) => {
+        try {
+            switch(msg.type) {
+                case 'log':
+                    msg.success 
+                    ? logger.log(JSON.stringify(msg)) 
+                    : logger.error(JSON.stringify(msg));
+                    break;
+                case 'load':
+                    the.showLoadInfo(msg); break;
+                default:;
+            }
+        } catch (err) { if (the.config.debug) {console.log(err);} }
+    });
+};
 /**
  * 这个函数是可以用于运维部署，此函数默认会根据CPU核数创建对应的子进程处理请求。
  * @param {number} port 端口号
@@ -610,7 +569,6 @@ motoboat.prototype.showLoadInfo = function (w) {
 motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
 
     if (typeof host === 'number') {num = host; host = '0.0.0.0'; }
-
     var the = this;
 
     if (process.argv.indexOf('--daemon') > 0) {
@@ -629,37 +587,13 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
         if (num <= 0) { num = os.cpus().length; }
 
         if (typeof the.config.pid_file === 'string'
-            && the.config.pid_file.length > 0
-        ) {
+            && the.config.pid_file.length > 0) {
+
             fs.writeFile(the.config.pid_file, process.pid, (err) => {
                 if (err) {console.error(err);}
             });
         }
-        var logger = null;
-        if (the.config.log_type == 'file') {
-            var out_log = fs.createWriteStream(the.config.log_file, {flags: 'a+'});
-            var err_log = fs.createWriteStream(the.config.error_log_file, {flags: 'a+'});
-
-            logger = new console.Console({stdout:out_log, stderr: err_log}); 
-        } else if (the.config.log_type == 'stdio') {
-            var opts = {stdout:process.stdout, stderr: process.stderr};
-            logger = new console.Console(opts);
-        }
-
-        cluster.on('message', (worker, msg, handle) => {
-            try {
-                switch(msg.type) {
-                    case 'log':
-                        msg.success 
-                        ? logger.log(JSON.stringify(msg)) 
-                        : logger.error(JSON.stringify(msg));
-                        break;
-                    case 'load':
-                        the.showLoadInfo(msg); break;
-                    default:;
-                }
-            } catch (err) { if (the.config.debug) {console.log(err);} }
-        });
+        this.daemonMessage();
 
         for(var i=0; i<num; i++) { cluster.fork(); }
 
