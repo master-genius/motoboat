@@ -44,11 +44,10 @@ helper.genFileName = function(filename = '', pre_str='') {
  */
 helper.moveFile = function (upf, options) {
     if (!options.filename) {
-        options.filename = helper.genFileName(upf.filename);
+        options.filename = helper.genFileName(upf.filename,
+            `${(Math.random()*1000).toFixed(0)}`);
     }
-
     var target = options.path + '/' + options.filename;
-    
     return new Promise((rv, rj) => {
         fs.writeFile(target, upf.data, {encoding : 'binary'}, err => {
             if (err) {
