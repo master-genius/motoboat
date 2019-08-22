@@ -39,16 +39,10 @@ aserv.add(async (rr, next) => {
     } else {
         await next(rr);
     }
-}, '/upload');
+}, {preg: '/upload'});
 
 
 router.get('/', async rr => {
-    /* for(var k in rr) {
-        if (k === 'request' || k === 'response') {
-            continue;
-        }
-        console.log(k, rr[k]);
-    } */
     rr.res.data = 'ok';
 });
 
@@ -62,14 +56,13 @@ router.post('/upload', async rr => {
     if (f) {
         try {
             rr.res.data = await rr.moveFile(f,{
-                path : imgpath
+                path : imgpath,
             });
         }
         catch(err) {
             console.log(err);
             rr.res.data = 'error';
         }
-
     } else {
         rr.res.data = 'Error: file not found';
     }

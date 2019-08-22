@@ -84,6 +84,11 @@ ant.add(async (ctx, next) => {
     await next(ctx);
 }, great.groupName);
 
+great.head('/', async c => {
+    c.res.setHeader('content-type', 'text/plain');
+    c.res.data = 'head head';
+});
+
 console.log(ant.router);
 console.log(ant.middleware);
 
