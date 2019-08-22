@@ -362,7 +362,8 @@ var ctx = {
         encoding : 'utf8' //返回数据的编码类型，如果是图片可以设置为binary。
     },
 
-    keys : {},
+    //中间件如果需要注入一些对象或值，可以放在box中。
+    box : {},
 };
 //如果是上传文件会用到，用于获取文件。
 ctx.getFile = function(name, ind = 0) {
@@ -434,4 +435,3 @@ router.delete('/content/:id', async c => {
 });
 
 ```
-
