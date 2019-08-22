@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.6
+ * motoboat 1.7.7
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -257,11 +257,11 @@ motoboat.prototype.checkUploadHeader = function(headerstr) {
  * @param {object} headers
  * @param {object} rinfo
  */
-motoboat.prototype.sendReqLog = function (headers, rinfo) {
+motoboat.prototype.sendReqLog = function (headers, method, rinfo) {
     var log_data = {
         type    : 'log',
         success : true,
-        method  : headers.method,
+        method  : method,
         link    : `${this.config.https_on?'https://':'http://'}${headers['host']}${rinfo.path}`,
         time    : (new Date()).toLocaleString("zh-Hans-CN"),
         status  : rinfo.status,
@@ -356,7 +356,7 @@ motoboat.prototype.onRequest = function (req, res) {
         var remote_ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
         if (the.config.global_log && cluster.isWorker) {
             res.on('finish', () => {
-                the.sendReqLog(req.headers, {
+                the.sendReqLog(req.headers, req.method, {
                     status : res.statusCode,
                     ip : remote_ip,
                     path : req.url

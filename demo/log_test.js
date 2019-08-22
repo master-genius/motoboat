@@ -20,7 +20,6 @@ var app = new mt({
 var {router} = app;
 
 router.get('/', async rr => {
-    console.log(rr);
     rr.res.data = 'success';
 });
 
