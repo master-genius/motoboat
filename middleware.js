@@ -129,12 +129,14 @@ function middleware (options = {}) {
             }
             var last = mw.mid_group[group].length-1;
             await mw.mid_group[group][last](ctx);
-            if (ctx.response) {
-                ctx.response.statusCode = 500;
-                ctx.response.end();
-            }
         } catch (err) {
             if (mw.debug) { console.log('--DEBUG--RESPONSE--:',err); }
+            try {
+                if (ctx.response) {
+                    ctx.response.statusCode = 500;
+                    ctx.response.end();
+                }
+            } catch (err) {}
         } finally {
             ctx.requestCall = null;
             ctx.request = null;
