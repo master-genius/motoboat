@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.2
+ * motoboat 1.7.3
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -27,7 +27,7 @@ const helper = require('./helper');
 /**
  * @param {object} options 初始化选项，参考值如下：
  * - ignoreSlash{bool} 忽略末尾的/，默认为true
- * - debug {bool} 调试模式，默认为true
+ * - debug {bool} 调试模式，默认为false
  * - limit {number} 限制请求最大连接数，如果是daemon接口，则是limit*进程数。
  * - deny  {Array} IP字符串数组，表示要拒绝访问的IP。
  * - maxIPRequest {number} 单个IP单元时间内最大访问次数。
@@ -53,19 +53,16 @@ const helper = require('./helper');
  */
 var motoboat = function (options = {}) {
     if (!(this instanceof motoboat)) {return new motoboat(options); }
-    //var the = this;
+
     this.config = {
         //此配置表示POST/PUT提交表单的最大字节数，也是上传文件的最大限制，
         body_max_size   : 8000000,
-
         //最大上传文件数量
         max_files       : 15,
 
         //开启守护进程，守护进程用于上线部署，要使用ants接口，run接口不支持
         daemon          : false,
-        /*
-            开启守护进程模式后，如果设置路径不为空字符串，则会把pid写入到此文件，可用于服务管理。
-        */
+        /*开启守护进程模式后，如果设置路径不为空字符串，则会把pid写入到此文件，可用于服务管理。*/
         pid_file        : '',
         log_file        : './access.log',
         error_log_file  : './error.log',
@@ -95,7 +92,7 @@ var motoboat = function (options = {}) {
         timeout : 20000,
         page_404 : 'page not found',
         show_load_info : true,
-        debug : true,
+        debug : false,
         min_mid: false,
     };
     this.req_ip_table = {}; // 记录IP访问次数，用于一段时间内的单个IP访问次数限制。
@@ -185,14 +182,13 @@ var motoboat = function (options = {}) {
     };
     //用于匹配content-type确定是不是上传文件。
     this.pregUpload = /multipart.* boundary.*=/i;
-    this.methodList = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
-
     this.helper = helper;
     this.parseUploadData = bodyParser.parseUploadData;
     this.parseSingleFile = bodyParser.parseSingleFile;
     
     this.router = router(options);
     this.group = this.router.group;
+    this.methodList = this.router.methodList;
 
     if (!this.config.min_mid) {
         this.middleware = middleware(options);
@@ -201,6 +197,9 @@ var motoboat = function (options = {}) {
         };
         this.addFinalResponse = function () {
             this.middleware.addFinalResponse(this.router.apiGroupTable);
+        };
+        this.addMore = function (midcall, mapcond) {
+            this.middleware.addMore(midcall, this.router.apiGroupTable, mapcond);
         };
     } else {
         this.middleware = midmin(options);
@@ -347,9 +346,7 @@ motoboat.prototype.sendReqLog = function (headers, rinfo) {
     }
 };
 
-/**
- * 限制IP请求次数的定时器。
- */
+/** 限制IP请求次数的定时器。*/
 motoboat.prototype.limitIPConnListen = function () {
     var the = this;
     setInterval(() => {
@@ -489,14 +486,17 @@ motoboat.prototype.onRequest = function (req, res) {
         else if (req.method=='POST' || req.method=='PUT' || req.method=='DELETE')
         {
             ctx.isUpload = the.checkUploadHeader(req.headers['content-type']);
+            var dataLength = 0;
             req.on('data', data => {
-                ctx.rawBody += data.toString('binary');
-                if (ctx.rawBody.length > the.config.body_max_size) {
+                dataLength = data.length;
+                if (dataLength > the.config.body_max_size) {
                     ctx.rawBody = '';
                     res.statusCode = 413;
                     res.end(`Body too large,limit:${the.config.body_max_size/1000}Kb`);
                     req.destroy(new Error(`body too large`));
+                    return ;
                 }
+                ctx.rawBody += data.toString('binary');
             });
         }
         req.on('end',() => {
@@ -637,12 +637,9 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
         }
         var logger = null;
         if (the.config.log_type == 'file') {
-            var out_log = fs.createWriteStream(
-                the.config.log_file, {flags : 'a+' }
-            );
-            var err_log = fs.createWriteStream(
-                the.config.error_log_file, {flags : 'a+' }
-            );
+            var out_log = fs.createWriteStream(the.config.log_file, {flags: 'a+'});
+            var err_log = fs.createWriteStream(the.config.error_log_file, {flags: 'a+'});
+
             logger = new console.Console({stdout:out_log, stderr: err_log}); 
         } else if (the.config.log_type == 'stdio') {
             var opts = {stdout:process.stdout, stderr: process.stderr};
@@ -661,7 +658,7 @@ motoboat.prototype.daemon = function(port=8192, host='0.0.0.0', num = 0) {
                         the.showLoadInfo(msg); break;
                     default:;
                 }
-            } catch (err) { console.log(err); }
+            } catch (err) { if (the.config.debug) {console.log(err);} }
         });
 
         for(var i=0; i<num; i++) { cluster.fork(); }
