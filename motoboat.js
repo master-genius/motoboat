@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.4
+ * motoboat 1.7.5
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
