@@ -55,7 +55,7 @@ router.post('/upload', async rr => {
     var f = rr.getFile('image');
     if (f) {
         try {
-            rr.res.data = await rr.moveFile(f,{
+            rr.res.data = await rr.helper.moveFile(f,{
                 path : imgpath,
             });
         }
@@ -68,4 +68,4 @@ router.post('/upload', async rr => {
     }
 });
 
-aserv.run(2020);
+aserv.daemon(2020);

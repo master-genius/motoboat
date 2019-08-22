@@ -5,7 +5,7 @@ const mt = require('../motoboat');
 
 var app = new mt({
     //deny: ['127.0.0.1']
-    maxIPRequest: 80,
+    maxIPRequest: 800,
     //showLoadInfo: false,
     peerTime: 1,
     //whiteList: ['127.0.0.1']
@@ -20,6 +20,7 @@ var app = new mt({
 var {router} = app;
 
 router.get('/', async rr => {
+    console.log(rr);
     rr.res.data = 'success';
 });
 
@@ -51,7 +52,6 @@ quantum.get('/what', async c => {
     } catch (err) {
         rr.res.data = err.message;
     }
-    //c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
 app.add(async (ctx, next) => {
@@ -59,6 +59,10 @@ app.add(async (ctx, next) => {
     await next(ctx);
     var end_time = Date.now();
     console.log(ctx.path, end_time - start_time);
+});
+
+quantum.get('/who', async c => {
+    c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
 //测试路由，会抛出错误，只能添加async声明的函数。
