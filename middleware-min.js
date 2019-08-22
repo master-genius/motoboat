@@ -43,11 +43,13 @@ function middleware (options = {}) {
     mw.runMiddleware = async function (ctx) {
         try {
             var last = mw.midChain.length-1;
-            return await mw.midChain[last](ctx);
+            await mw.midChain[last](ctx);
+            if (ctx.response) {
+                ctx.response.statusCode = 500;
+                ctx.response.end();
+            }
         } catch (err) {
             if (mw.debug) { console.log('--DEBUG--RESPONSE--:',err); }
-            ctx.response.statusCode = 500;
-            ctx.response.end();
         } finally {
             ctx.requestCall = null;
             ctx.request = null;

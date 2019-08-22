@@ -104,6 +104,20 @@ function middleware (options = {}) {
     };
 
     /**
+     * 按照条件添加中间件到多个分组或匹配。
+     * @param {function} midcall
+     * @param {array} mapcond
+     */
+    mw.addMore = function (midcall, groupTable, mapcond) {
+        if (! (mapcond instanceof Array)) {
+            throw new Error('mapcond must be array');
+        }
+        for (let i=0; i<mapcond.length; i++) {
+            mw.add(midcall, groupTable, mapcond[i]);
+        }
+    };
+
+    /**
      * 执行中间件，其中核心则是请求回调函数。
      * @param {object} ctx 请求上下文实例。
      */
@@ -115,10 +129,12 @@ function middleware (options = {}) {
             }
             var last = mw.mid_group[group].length-1;
             await mw.mid_group[group][last](ctx);
+            if (ctx.response) {
+                ctx.response.statusCode = 500;
+                ctx.response.end();
+            }
         } catch (err) {
             if (mw.debug) { console.log('--DEBUG--RESPONSE--:',err); }
-            ctx.response.statusCode = 500;
-            ctx.response.end();
         } finally {
             ctx.requestCall = null;
             ctx.request = null;
