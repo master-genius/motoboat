@@ -61,6 +61,7 @@ function middleware (options = {}) {
             ctx.rawBody = '';
             ctx.headers = null;
             ctx.res.body = null;
+            ctx.box = null;
         }
     };
 
