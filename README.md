@@ -1,15 +1,19 @@
 
-![-](images/motoboat-load-info.png)
+![-](images/mlogo.png)
 
 # motoboat
 
-基于Node.js的Web框架，使用async/await关键字解决回调地狱。
+![-](images/motoboat-load-info.png)
 
-支持HTTPS，支持HTTP/1.1协议，不支持HTTP/2。若要使用HTTP/2，请使用框架awix。
+基于Node.js的Web框架，使用async/await关键字解决回调过度嵌套。
+
+支持HTTPS，支持HTTP/HTTPS协议。若要使用HTTP/2，请使用框架titbit。
+
+**查看更详细的内容，请点击[Wiki](https://github.com/master-genius/motoboat/wiki)**
 
 motoboat通过一个被称为请求上下文的对象打包了需要的数据以及原始的请求对象（request和response）。通过请求上下文对象可以获取本次请求所有的信息。
 
-支持功能：
+支持主要功能：
 
 * 中间件
 * 路由
@@ -233,15 +237,14 @@ middleware end
 
 add支持第二个参数，如果没有表示全局执行，所有的请求都会先执行此中间件，否则可以填写值如下：
 
-* 字符串：表示组的名称，只在路由分组内添加中间件。
+* 字符串/字符串数组：表示针对哪个路由或哪些使用中间件。
 
-* JSON对象：{preg: PREG, group: GROUP}，preg表示匹配规则，group表示组名称，两个是可选项。preg的值如下：
-  * 字符串：只对此路由执行。
-  * 字符串数组：在其中的字符串都会执行。
-  * 正则表达式：匹配后执行。
+* JSON对象：{preg: PREG, group: GROUP, method: METHOD}，preg表示匹配规则，group表示组名称，method是请求类型，比如GET/POST，3个都是可选项，参考值如下：
+     * preg：字符串/字符串数组
+     * group：字符串
+     * method：字符串/字符串数组
 
-* 正则表达式或字符串数组：其实就是preg的匹配规则。全局添加。
-
+提供这些复杂的功能是为了方便的处理实际需要，比如针对上传文件检测等一系列操作的中间件则不需要在其他请求类型以及路径下执行。那么，如果什么选项也不使用，则就好比使用了一个最简模式全局的中间件机制。
 
 以下是一个更加复杂的示例：
 
@@ -313,10 +316,10 @@ var ctx = {
      *     "pass" : "world"
      *  }
     */
-    param        : {},
+    param       : {},
 
     query       : {}, //查询字符串参数，就是URL中?后面的部分
-    body   : {}, //POST或PUT请求提交的表单，也可能是其它格式的文本而不是JSON对象。
+    body        : {}, //POST或PUT请求提交的表单，也可能是其它格式的文本而不是JSON对象。
     isUpload    : false, //是不是上传文件。
     group       : '', //所属路由分组。
     /** 
@@ -364,6 +367,7 @@ var ctx = {
     //中间件如果需要注入一些对象或值，可以放在box中。
     box : {},
 };
+
 //如果是上传文件会用到，用于获取文件。
 ctx.getFile = function(name, ind = 0) {
     if (ind < 0) {return ctx.files[name] || [];}
@@ -378,16 +382,7 @@ ctx.getFile = function(name, ind = 0) {
 ctx.res.setHeader = function (name, val) {
     ctx.response.setHeader(name, val);
 };
-//这个write函数会把数据附加到res.body上，然后最终返回。
-ctx.res.write = function(data) {
-    if (typeof data === 'string') {
-        ctx.res.body += data;
-    } else if (data instanceof Buffer) {
-        ctx.res.body += data.toString(ctx.res.encoding);
-    } else if (typeof data === 'number') {
-        ctx.res.body += data.toString();
-    }
-};
+
 //设置状态码
 ctx.res.status = function(stcode = null) {
     if (stcode === null) { return ctx.response.statusCode; }
