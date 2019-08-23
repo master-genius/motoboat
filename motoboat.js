@@ -1,5 +1,5 @@
 /**
- * motoboat 1.7.7
+ * motoboat 1.8.0
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -262,7 +262,7 @@ motoboat.prototype.sendReqLog = function (headers, method, rinfo) {
         type    : 'log',
         success : true,
         method  : method,
-        link    : `${this.config.https_on?'https://':'http://'}${headers['host']}${rinfo.path}`,
+        link    : `${this.config.https?'https://':'http://'}${headers['host']}${rinfo.path}`,
         time    : (new Date()).toLocaleString("zh-Hans-CN"),
         status  : rinfo.status,
         ip      : rinfo.ip
@@ -417,7 +417,7 @@ motoboat.prototype.onRequest = function (req, res) {
             ctx.isUpload = the.checkUploadHeader(req.headers['content-type']);
             var dataLength = 0;
             req.on('data', data => {
-                dataLength = data.length;
+                dataLength += data.length;
                 if (dataLength > the.config.body_max_size) {
                     ctx.rawBody = '';
                     res.statusCode = 413;
