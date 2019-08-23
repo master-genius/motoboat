@@ -54,16 +54,6 @@ var context = function () {
         ctx.response.setHeader(name, val);
     };
 
-    ctx.res.write = function(data) {
-        if (typeof data === 'string') {
-            ctx.res.body += data;
-        } else if (body instanceof Buffer) {
-            ctx.res.body += data.toString(ctx.res.encoding);
-        } else if (typeof data === 'number') {
-            ctx.res.body += data.toString();
-        }
-    };
-
     ctx.res.status = function(stcode = null) {
         if (stcode === null) { return ctx.response.statusCode; }
         if(ctx.response) { ctx.response.statusCode = stcode; }
