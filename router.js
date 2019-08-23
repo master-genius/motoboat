@@ -115,7 +115,7 @@ function router (options = {}) {
     };
 
     rt.any = (api_path, callback, name='') => {
-        rt.map(the.methodList, api_path, callback, name);
+        rt.map(rt.methodList, api_path, callback, name);
     };
 
     rt.map = (marr, api_path, callback, name='') => {
