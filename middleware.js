@@ -142,10 +142,10 @@ function middleware (options = {}) {
             ctx.request = null;
             ctx.response = null;
             ctx.files = null;
-            ctx.bodyparam = null;
+            ctx.body = null;
             ctx.rawBody = '';
             ctx.headers = null;
-            ctx.res.data = null;
+            ctx.res.body = null;
         }
     };
 
@@ -156,19 +156,19 @@ function middleware (options = {}) {
             if (!ctx.response || ctx.response.finished) { return ; }
 
             var content_type = 'text/plain;charset=utf-8';
-            var datatype = typeof ctx.res.data;
+            var datatype = typeof ctx.res.body;
             if (!ctx.response.headersSent) {
                 if (datatype == 'object') {
                     ctx.response.setHeader('content-type','text/json;charset=utf-8');
                 } else if (!ctx.response.hasHeader('content-type')
-                    && datatype == 'string' && ctx.res.data.length > 1
+                    && datatype == 'string' && ctx.res.body.length > 1
                 ) {
-                    switch (ctx.res.data[0]) {
+                    switch (ctx.res.body[0]) {
                         case '{':
                         case '[':
                             content_type = 'text/json;charset=utf-8'; break;
                         case '<':
-                            if (ctx.res.data[1] == '!') {
+                            if (ctx.res.body[1] == '!') {
                                 content_type = 'text/html;charset=utf-8';
                             } else {
                                 content_type = 'text/xml;charset=utf-8';
@@ -181,9 +181,9 @@ function middleware (options = {}) {
             }
             
             if (datatype == 'object' || datatype == 'boolean') {
-                ctx.response.end(JSON.stringify(ctx.res.data));
+                ctx.response.end(JSON.stringify(ctx.res.body));
             } else if (datatype == 'string') {
-                ctx.response.end(ctx.res.data, ctx.res.encoding);
+                ctx.response.end(ctx.res.body, ctx.res.encoding);
             } else {
                 ctx.response.end();
             }

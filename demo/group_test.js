@@ -13,14 +13,14 @@ var {router} = ant;
 var api = router.group('/api');
 
 api.get('/a', async rr => {
-    rr.res.data = {
+    rr.res.body = {
         a : 1, b: 2
     };
 });
 
 api.get('/xyz', async rr => {
     console.log(rr.group);
-    rr.res.data = 'xyz';
+    rr.res.body = 'xyz';
 });
 
 
@@ -36,7 +36,7 @@ ant.add(async (rr, next) => {
 
 router.get('/api/we', async rr => {
     console.log(rr.group, 'nothing to say');
-    rr.res.data = 'success';
+    rr.res.body = 'success';
 });
 
 router.options('/*', async rr => {
@@ -49,11 +49,11 @@ ant.add(async (rr, next) => {
 }, {preg : /xy/i, group: api.groupName});
 
 api.get('a/:c/x', async rr => {
-    rr.res.data = rr.args;
+    rr.res.body = rr.param;
 });
 
 router.get('x/y/', async rr => {
-    rr.res.data = `${rr.path}\n${rr.routepath}`;
+    rr.res.body = `${rr.path}\n${rr.routepath}`;
 });
 
 router.get('/', async rr => {
@@ -61,17 +61,17 @@ router.get('/', async rr => {
         'GET' : Object.keys(router.apiTable['GET']),
         'POST' : Object.keys(router.apiTable['POST'])
     };
-    rr.res.data = api_list;
+    rr.res.body = api_list;
 });
 
 var great = router.group('great');
 
 great.get('/', async c => {
-    c.res.data = 'great';
+    c.res.body = 'great';
 });
 
 great.get('/:name', async c => {
-    c.res.data = c.args;
+    c.res.body = c.param;
 }, 'name');
 
 ant.add(async (ctx, next) => {
@@ -86,7 +86,7 @@ ant.add(async (ctx, next) => {
 
 great.head('/', async c => {
     c.res.setHeader('content-type', 'text/plain');
-    c.res.data = 'head head';
+    c.res.body = 'head head';
 });
 
 console.log(ant.router);

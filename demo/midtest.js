@@ -20,29 +20,29 @@ var app = new mt({
 var {router} = app;
 
 router.get('/', async rr => {
-    rr.res.data = 'success';
+    rr.res.body = 'success';
 });
 
 router.get('/name', async rr => {
-    rr.res.data = rr.param;
+    rr.res.body = rr.query;
 });
 
 var quantum = router.group('quantum');
 quantum.get('/what', async c => {
     try {
-        c.res.data = await new Promise((rv, rj) => {
+        c.res.body = await new Promise((rv, rj) => {
             fs.readFile('quantum', {encoding:'utf8'}, (err, data) => {
                 if (err) {rj(err);}
                 rv(data);
             });
         });
     } catch (err) {
-        rr.res.data = err.message;
+        rr.res.body = err.message;
     }
 });
 
 quantum.get('/who', async c => {
-    c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
+    c.res.body = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
 app.addMore(async (ctx, next) => {

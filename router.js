@@ -301,7 +301,7 @@ function router (options = {}) {
         ctx.requestCall = r.reqcall.reqCall;
         ctx.name = r.reqcall.name;
         ctx.group = r.reqcall.groupName;
-        ctx.args = r.args;
+        ctx.param = r.args;
         if (!rt.apiGroupTable[ctx.group] 
             || !rt.apiGroupTable[ctx.group][ctx.routepath]
         ) {

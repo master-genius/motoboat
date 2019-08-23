@@ -20,19 +20,19 @@ var app = new mt({
 var {router} = app;
 
 router.get('/', async rr => {
-    rr.res.data = 'success';
+    rr.res.body = 'success';
 });
 
 router.get('/name', async rr => {
-    rr.res.data = rr.param;
+    rr.res.body = rr.query;
 });
 
 router.post('/p', async rr => {
-    rr.res.data = rr.bodyparam;
+    rr.res.body = rr.body;
 });
 
 router.get('/wrong', async rr => {
-    throw new Error('error test');
+    throw 'error test';
 });
 
 router.get('/end', async rr => {
@@ -42,14 +42,14 @@ router.get('/end', async rr => {
 var quantum = router.group('quantum');
 quantum.get('/what', async c => {
     try {
-        c.res.data = await new Promise((rv, rj) => {
+        c.res.body = await new Promise((rv, rj) => {
             fs.readFile('quantum', {encoding:'utf8'}, (err, data) => {
                 if (err) {rj(err);}
                 rv(data);
             });
         });
     } catch (err) {
-        rr.res.data = err.message;
+        rr.res.body = err.message;
     }
 });
 
@@ -61,7 +61,7 @@ app.add(async (ctx, next) => {
 });
 
 quantum.get('/who', async c => {
-    c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
+    c.res.body = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
 //测试路由，会抛出错误，只能添加async声明的函数。

@@ -19,9 +19,9 @@ var context = function () {
         headers     : {},
         //实际执行请求的路径
         routepath   : '/',
-        args        : {},
         param       : {},
-        bodyparam   : {},
+        query       : {},
+        body        : {},
         isUpload    : false,
         group       : '',
         rawBody     : '',
@@ -34,7 +34,7 @@ var context = function () {
 
         res         : {
             statusCode : 200,
-            data : '',
+            body : '',
             encoding : 'utf8'
         },
 
@@ -56,11 +56,11 @@ var context = function () {
 
     ctx.res.write = function(data) {
         if (typeof data === 'string') {
-            ctx.res.data += data;
-        } else if (data instanceof Buffer) {
-            ctx.res.data += data.toString(ctx.res.encoding);
+            ctx.res.body += data;
+        } else if (body instanceof Buffer) {
+            ctx.res.body += data.toString(ctx.res.encoding);
         } else if (typeof data === 'number') {
-            ctx.res.data += data.toString();
+            ctx.res.body += data.toString();
         }
     };
 

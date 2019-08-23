@@ -38,10 +38,10 @@ var {router} = app;
 
 router.get('/', async c => {
     /*
-        只需要设置c.res.data的值，就会自动返回数据，
+        只需要设置c.res.body的值，就会自动返回数据，
         可以是数组，JSON，字符串，数字类型。
     */
-    c.res.data = 'success';
+    c.res.body = 'success';
 });
 
 app.run(8192);
@@ -62,15 +62,15 @@ var app = new mot();
 var {router} = app;
 
 router.get('/', async c => {
-    c.res.data = 'success';
+    c.res.body = 'success';
 });
 
 router.get('/t', async c => {
-    c.res.data = 'great';
+    c.res.body = 'great';
 });
 
 router.post('/pt', async c => {
-    c.res.data = 'This is post page';
+    c.res.body = 'This is post page';
 });
 
 app.run(8192);
@@ -87,8 +87,8 @@ var app = new mot();
 var {router} = app;
 
 router.get('/', async c => {
-    //URL的查询字符串（?a=1&b=2...），被解析到c.param，以JSON形式存储。
-    c.res.data = c.param;
+    //URL的查询字符串（?a=1&b=2...），被解析到c.query，以JSON形式存储。
+    c.res.body = c.query;
 });
 
 app.run(8192);
@@ -107,15 +107,15 @@ var app = new mot();
 var {router} = app;
 
 router.get('/', async c => {
-    c.res.data = 'success';
+    c.res.body = 'success';
 });
 
 router.post('/pt', async c => {
-    c.res.data = c.bodyparam;
+    c.res.body = c.body;
 });
 
 router.put('/pu', async c => {
-    c.res.data = c.bodyparam;
+    c.res.body = c.body;
 });
 
 app.run(8192);
@@ -124,7 +124,7 @@ app.run(8192);
 
 ## 路由更多内容
 
-路由就是根据域名后的路径去查找并执行对应的函数。框架本身路由的添加方式很简单，支持使用:表示变量，使用*匹配任意路径。并且路由参数只是以字符串形式解析，并不做各种类型转换的处理。解析后的参数保存在args字段。框架支持的请求方法是：GET、POST、PUT、DELETE、OPTIONS。分别有对应小写的方法。
+路由就是根据域名后的路径去查找并执行对应的函数。框架本身路由的添加方式很简单，支持使用:表示变量，使用*匹配任意路径。并且路由参数只是以字符串形式解析，并不做各种类型转换的处理。解析后的参数保存在param字段。框架支持的请求方法是：GET、POST、PUT、DELETE、OPTIONS。分别有对应小写的方法。
 
 ``` JavaScript
 
@@ -134,12 +134,12 @@ app.run(8192);
     /page/a.html
 */
 serv.get('/page/:name', async c => {
-  //解析后的参数保存在c.args
-  c.res.data = c.args['name'];
+  //解析后的参数保存在c.param
+  c.res.body = c.param['name'];
 });
 
 serv.get('/login/:username/:passwd', async c => {
-  var {username, passwd} = c.args;
+  var {username, passwd} = c.param;
   //....
 });
 
@@ -169,7 +169,7 @@ api.map(['GET','POST','PUT'], '/x', async c => {
 //请求命名
 router.put('/who', async c => {
     //通过c.name获取名称
-    c.res.data = c.name;
+    c.res.body = c.name;
 }, 'Albert·Einstein');
 
 ```
@@ -204,13 +204,13 @@ var {router} = serv;
  * 
  * */
 serv.add(async (c, next) => {
-  c.res.data += 'I am middleware';
+  c.res.body += 'I am middleware';
   await next(c);
-  c.res.data += 'middleware end';
+  c.res.body += 'middleware end';
 }, {preg: '/mid-test'});
 
 router.get('/mid-test', async c => {
-  c.res.data += 'This test page for middleware';
+  c.res.body += 'This test page for middleware';
 });
 
 ```
@@ -260,15 +260,15 @@ serv.add(async (c, next) => {
 }, {group: api.groupName, preg: `${api.groupName}/what`});
 
 router.get('/great', async c => {
-  c.res.data += 'This test page for middleware';
+  c.res.body += 'This test page for middleware';
 });
 
 api.get('/nice', async c => {
-  c.res.data += 'This test page for middleware, group: '+c.group;
+  c.res.body += 'This test page for middleware, group: '+c.group;
 });
 
 api.get('/what', async c => {
-  c.res.data += 'what?';
+  c.res.body += 'what?';
 });
 
 ```
@@ -291,7 +291,6 @@ var ctx = {
         host        : '',   //示例，w3xm.top或a.com:8119
         protocol    : '',   //协议，http:或https:
         href        : '',   // /a?name=q
-        origin      : '',   // 原始的url
         port        : '',   // 端口
     },
     ip          : '',   //远程客户端IP
@@ -308,16 +307,16 @@ var ctx = {
 
     /** 
      * 路由参数，比如/login/:user/:pass，实际请求/login/hello/world。
-     * 则路由参数被解析到args：
+     * 则路由参数被解析到param：
      *  {
      *     "user" : "hello",
      *     "pass" : "world"
      *  }
     */
-    args        : {},
+    param        : {},
 
-    param       : {}, //查询字符串参数，就是URL中?后面的部分
-    bodyparam   : {}, //POST或PUT请求提交的表单，也可能是其它格式的文本而不是JSON对象。
+    query       : {}, //查询字符串参数，就是URL中?后面的部分
+    body   : {}, //POST或PUT请求提交的表单，也可能是其它格式的文本而不是JSON对象。
     isUpload    : false, //是不是上传文件。
     group       : '', //所属路由分组。
     /** 
@@ -379,14 +378,14 @@ ctx.getFile = function(name, ind = 0) {
 ctx.res.setHeader = function (name, val) {
     ctx.response.setHeader(name, val);
 };
-//这个write函数会把数据附加到res.data上，然后最终返回。
+//这个write函数会把数据附加到res.body上，然后最终返回。
 ctx.res.write = function(data) {
     if (typeof data === 'string') {
-        ctx.res.data += data;
+        ctx.res.body += data;
     } else if (data instanceof Buffer) {
-        ctx.res.data += data.toString(ctx.res.encoding);
+        ctx.res.body += data.toString(ctx.res.encoding);
     } else if (typeof data === 'number') {
-        ctx.res.data += data.toString();
+        ctx.res.body += data.toString();
     }
 };
 //设置状态码

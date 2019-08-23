@@ -1,5 +1,5 @@
 /**
- * motoboat 1.8.0
+ * motoboat 1.9.0
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -225,13 +225,9 @@ motoboat.prototype.execRequest = function (ctx) {
         if (ctx.headers['content-type'] && 
             ctx.headers['content-type'].indexOf('application/x-www-form-urlencoded') >= 0
         ) {
-            ctx.bodyparam = qs.parse(
-                    Buffer.from(ctx.rawBody, 'binary').toString('utf8')
-                );
+            ctx.body = qs.parse(Buffer.from(ctx.rawBody, 'binary').toString('utf8'));
         } else {
-            ctx.bodyparam = Buffer
-                            .from(ctx.rawBody, 'binary')
-                            .toString('utf8');
+            ctx.body = Buffer.from(ctx.rawBody, 'binary').toString('utf8');
         }
     }
     else if (ctx.isUpload && this.config.parse_upload) {
@@ -390,7 +386,7 @@ motoboat.prototype.onRequest = function (req, res) {
         ctx.response = res;
         ctx.headers = req.headers;
         ctx.path = urlobj.pathname;
-        ctx.param = urlobj.query;
+        ctx.query = urlobj.query;
         the.router.setContext(real_path, ctx);
         
         if (req.method == 'GET' || req.method == 'OPTIONS') {
