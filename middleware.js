@@ -43,35 +43,47 @@ function middleware (options = {}) {
     mw.add = function (midcall, groupTable, options = {}) {
         var preg = null;
         var group = null;
+        var method = null;
         if (typeof options === 'string') {
-            group = options;
-        } else if (options instanceof Array || options instanceof RegExp) {
+            preg = options;
+        } else if (options instanceof Array) {
             preg = options;
         } else if (typeof options === 'object') {
             if (options.preg !== undefined) {
                preg = options.preg;
             }
-            if (options.group !== undefined) {
+            if (options.group !== undefined && typeof options.group === 'string') {
                group = options.group;
             }
+            if (options.method !== undefined) {
+                method = options.method;
+                if (typeof method !== 'string' && !(method instanceof Array)) {
+                    method = null;
+                }
+            }
         }
+
+        if(typeof preg === 'string') {
+            if (preg.length > 0) {
+                preg = [ preg ];
+            } else {
+                preg = null;
+            }
+        } else if (! (preg instanceof Array) ) {
+            preg = null;
+        }
+
         /* 根据匹配规则如果不匹配则跳过这一层函数。*/
         var genRealCall = function(prev_mid, group) {
             return async function (rr) {
-                if (preg) {
-                    if (
-                        (typeof preg === 'string' && preg !== rr.routepath)
-                        ||
-                        (preg instanceof RegExp && !preg.test(rr.routepath))
-                        ||
-                        (preg instanceof Array && preg.indexOf(rr.routepath) < 0)
-                    ) {
-                        return await mw.mid_group[group][prev_mid](rr);
-                    }
+                if (method !== null && method.indexOf(rr.method) < 0) {
+                    return await mw.mid_group[group][prev_mid](rr);
+                }
+                if (preg !== null && preg.indexOf(rr.routepath) < 0) {
+                    return await mw.mid_group[group][prev_mid](rr);
                 }
                 return await midcall(rr, mw.mid_group[group][prev_mid]);
             };
-        
         };
 
         var last = 0;
@@ -146,6 +158,7 @@ function middleware (options = {}) {
             ctx.rawBody = '';
             ctx.headers = null;
             ctx.res.body = null;
+            ctx.box = null;
         }
     };
 
