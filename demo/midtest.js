@@ -45,15 +45,20 @@ quantum.get('/who', async c => {
     c.res.body = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
-app.addMore(async (ctx, next) => {
-    var start_time = Date.now();
-    await next(ctx);
-    var end_time = Date.now();
-    console.log(ctx.path, end_time - start_time);
-}, [{preg:'/name'}, quantum.groupName, ]);
-
 //测试路由，会抛出错误，只能添加async声明的函数。
 //router.get('/router-test', rr => { });
+
+app.add(async (ctx, next) => {
+    console.log('q1');
+    await next(ctx);
+    console.log('q1');
+});
+
+app.add(async (ctx, next) => {
+    console.log('q2');
+    await next(ctx);
+    console.log('q2');
+});
 
 if (process.argv.length >= 3 && process.argv[2] == '-d') {
     app.config.daemon = true;

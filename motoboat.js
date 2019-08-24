@@ -1,5 +1,5 @@
 /**
- * motoboat 2.0.0
+ * motoboat 2.0.1
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -192,7 +192,6 @@ var motoboat = function (options = {}) {
     this.parseSingleFile = bodyParser.parseSingleFile;
     
     this.router = router(options);
-    this.group = this.router.group;
     this.methodList = this.router.methodList;
 
     if (!this.config.min_mid) {

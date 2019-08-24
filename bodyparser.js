@@ -56,21 +56,23 @@ bodyParser.parseSingleFile = function(ctx, start_ind, end_ind) {
         filename        : '',
         'content-type'  : '',
         data            : '',
+        length          : 0,
     };
     
     file_post.data = ctx.rawBody.substring(header_end_ind+4, end_ind);
+    file_post.length = end_ind - 4 - header_end_ind;
 
     //parse header
     if (header_data.search("Content-Type") < 0) {
         //post form data, not file data
         var form_list = header_data.split(";");
         var tmp;
-        for(var i=0; i<form_list.length; i++) {
+        for(var i=0; i<form_list.length && i < 10; i++) {
             tmp = form_list[i].trim();
             if (tmp.search("name=") > -1) {
                 var name = tmp.split("=")[1].trim();
                 name = name.substring(1, name.length-1);
-                ctx.bodyparam[name] = Buffer.from(file_post.data, 'binary').toString('utf8');
+                ctx.body[name] = Buffer.from(file_post.data, 'binary').toString('utf8');
                 break;
             }
         }
@@ -80,7 +82,7 @@ bodyParser.parseSingleFile = function(ctx, start_ind, end_ind) {
         var tmp_name = form_list[0].split(";");
 
         var name = '';
-        for (var i=0; i<tmp_name.length; i++) {
+        for (var i=0; i<tmp_name.length && i < 10; i++) {
             if (tmp_name[i].search("filename=") > -1) {
                 file_post.filename = tmp_name[i].split("=")[1].trim();
                 file_post.filename = file_post.filename.substring(1, file_post.filename.length-1);
