@@ -7,7 +7,7 @@
 
 基于Node.js的Web框架，使用async/await关键字解决回调过度嵌套。
 
-支持HTTP/HTTPS。若要使用HTTP/2，请使用框架titbit。
+支持HTTP/HTTPS。若要使用HTTP/2，请使用框架[titbit](https://github.com/master-genius/titbit)。
 
 **查看更详细的内容，请点击[Wiki](https://github.com/master-genius/motoboat/wiki)**
 
