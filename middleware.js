@@ -18,15 +18,36 @@ function middleware (options = {}) {
     }
 
     mw.globalKey = '*GLOBAL*';
-
     mw.mid_chain = [
         async function (ctx) {
             return await ctx.requestCall(ctx);
         }
     ];
-
     mw.mid_group = {};
     mw.mid_group[mw.globalKey] = [ mw.mid_chain[0] ];
+
+    //缓存添加的中间件列表，最后逆序添加，则可以实现按照正常顺序写代码的逻辑。
+    mw.stack_cache = [];
+    
+    /**
+     * @param {function} midcall 回调函数
+     * @param {array|object|string} 选项
+     */
+    mw.addCache = function (midcall, options = {}) {
+        mw.stack_cache.push({
+            callback: midcall,
+            options: options
+        });
+    };
+
+    /**
+     * @param {object} groupTable 路由分组表
+     */
+    mw.addFromCache = function (groupTable) {
+        for (let i = mw.stack_cache.length-1; i>=0; i--) {
+            mw.add(mw.stack_cache[i].callback, groupTable, mw.stack_cache[i].options);
+        }
+    };
 
     /**
      * 添加中间件。
@@ -112,20 +133,6 @@ function middleware (options = {}) {
         mw.mid_group[group] = [];
         for(var i=0; i < mw.mid_group[mw.globalKey].length; i++) {
             mw.mid_group[group].push(mw.mid_group[mw.globalKey][i]);
-        }
-    };
-
-    /**
-     * 按照条件添加中间件到多个分组或匹配。
-     * @param {function} midcall
-     * @param {array} mapcond
-     */
-    mw.addMore = function (midcall, groupTable, mapcond) {
-        if (! (mapcond instanceof Array)) {
-            throw new Error('mapcond must be array');
-        }
-        for (let i=0; i<mapcond.length; i++) {
-            mw.add(midcall, groupTable, mapcond[i]);
         }
     };
 

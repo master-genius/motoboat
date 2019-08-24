@@ -1,5 +1,5 @@
 /**
- * motoboat 1.9.1
+ * motoboat 2.0.0
  * Copyright (c) [2019.08] BraveWang
  * This software is licensed under the MPL-2.0.
  * You can use this software according to the terms and conditions of the MPL-2.0.
@@ -172,8 +172,12 @@ var motoboat = function (options = {}) {
                 console.log(err);
             }
         }
-        this.config.log_file = options.logFile;
-        this.config.error_log_file = options.errorLogFile;
+        if (options.logFile) {
+            this.config.log_file = options.logFile;
+        }
+        if (options.errorLogFile) {
+            this.config.error_log_file = options.errorLogFile;
+        }
     }
     /** 记录当前的运行情况 */
     this.rundata = {
@@ -197,15 +201,14 @@ var motoboat = function (options = {}) {
             return this.middleware.add(midcall, this.router.apiGroupTable, options);
         };
         this.addFinalResponse = function () {
-            this.middleware.addFinalResponse(this.router.apiGroupTable);
+            return this.middleware.addFinalResponse(this.router.apiGroupTable);
         };
-        this.addMore = function (midcall, mapcond) {
-            this.middleware.addMore(midcall, this.router.apiGroupTable, mapcond);
-        };
+        this.use = this.middleware.addCache;
     } else {
         this.middleware = midmin(options);
         this.add = this.middleware.add;
         this.addFinalResponse = this.middleware.addFinalResponse;
+        this.use = this.middleware.addCache;
     }
     this.runMiddleware = this.middleware.runMiddleware;
 
@@ -442,6 +445,7 @@ motoboat.prototype.run = function(port = 8192, host = '0.0.0.0') {
     if (this.limit.per_ip_max_req > 0) {
         this.limitIPConnListen();
     }
+    this.middleware.addFromCache(this.router.apiGroupTable);
     this.addFinalResponse();
     var the = this;
     var serv = null;

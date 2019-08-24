@@ -23,6 +23,26 @@ function middleware (options = {}) {
         }
     ];
 
+    //缓存添加的中间件列表，最后逆序添加，则可以实现按照正常顺序写代码的逻辑。
+    mw.stackCache = [];
+    
+    /**
+     * @param {function} midcall 回调函数
+     * @param {array|object|string} 选项
+     */
+    mw.addCache = function (midcall, options = {}) {
+        mw.stackCache.push(midcall);
+    };
+
+    /**
+     * @param {object} groupTable 路由分组表，此处只是作为形式，为了统一接口调用
+     */
+    mw.addFromCache = function (groupTable=null) {
+        for (let i = mw.stackCache.length-1; i>=0; i--) {
+            mw.add(mw.stackCache[i]);
+        }
+    };
+
     /**
      * 添加中间件。
      * @param {async function} midcall 接受参数(ctx, next)

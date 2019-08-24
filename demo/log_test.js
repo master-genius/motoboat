@@ -12,7 +12,7 @@ var app = new mt({
     bodyMaxSize: 1000000,
     cert: '../rsa/localhost-cert.pem',
     key: '../rsa/localhost-privkey.pem',
-    //showLoadInfo: false,
+    showLoadInfo: false,
     //globalLog:true,
     logType: 'stdio'
 });
@@ -53,16 +53,18 @@ quantum.get('/what', async c => {
     }
 });
 
-app.add(async (ctx, next) => {
+app.use(async (ctx, next) => {
+    console.log('start timing');
     var start_time = Date.now();
     await next(ctx);
     var end_time = Date.now();
-    console.log(ctx.path, end_time - start_time);
+    console.log('end timing', ctx.path, end_time - start_time);
 });
 
-app.add(async (ctx, next) => {
-    //ctx.response.write(' - BraveWang:\n');
+app.use(async (ctx, next) => {
+    console.log(' - BraveWang:');
     await next(ctx);
+    console.log(' - BraveWang:');
 }, {method: 'GET'});
 
 quantum.get('/who', async c => {
