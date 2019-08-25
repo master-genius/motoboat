@@ -1,6 +1,6 @@
 {
   "name": "motoboat",
-  "version": "2.0.2",
+  "version": "2.1.1",
   "description": "a powerful web framework, build on module http and https.",
   "main": "motoboat.js",
   "scripts": {
