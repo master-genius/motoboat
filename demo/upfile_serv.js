@@ -1,7 +1,12 @@
-const mt = require('../motoboat.js');
+const mt = require('../main.js');
 const fs = require('fs');
 
-aserv = new mt();
+aserv = new mt({
+    cert: '../rsa/localhost-cert.pem',
+    key:  '../rsa/localhost-privkey.pem',
+    useLimit: true,
+    //https: true,
+});
 
 var {router} = aserv;
 
@@ -16,38 +21,38 @@ aserv.add(async (rr, next) => {
             await next(rr);
             break;
         default:
-            rr.res.data = `${fty} : file type not allowed`;
+            rr.res.body = `${fty} : file type not allowed`;
     }
-}, {preg : '/upload'});
+}, {name: 'upload-image'});
 
 //针对/upload2路由的中间件，单文件上传检测文件大小不能超过2M。
 aserv.add(async (rr, next) => {
     console.log('checking file size');
     if (rr.getFile('image').data.length > 2000000 ) {
-        rr.res.data = 'Error: image size too large';
+        rr.res.body = 'Error: image size too large';
     } else {
         await next(rr);
     }
 
-}, {preg: '/upload'});
+}, {name: 'upload-image'});
 
 //检测文件是否存在
 aserv.add(async (rr, next) => {
     console.log('checking upload file');
     if (!rr.isUpload || rr.getFile('image') === null) {
-        rr.res.data = 'Error: file not found';
+        rr.res.body = 'Error: file not found';
     } else {
         await next(rr);
     }
-}, {preg: '/upload'});
+}, {name: 'upload-image'});
 
 
 router.get('/', async rr => {
-    rr.res.data = 'ok';
+    rr.res.body = 'ok';
 });
 
-router.post('/pt', async rr => {
-    rr.res.data = rr.bodyparam;
+router.post('/p', async rr => {
+    rr.res.body = rr.body;
 });
 
 router.post('/upload', async rr => {
@@ -55,17 +60,17 @@ router.post('/upload', async rr => {
     var f = rr.getFile('image');
     if (f) {
         try {
-            rr.res.data = await rr.helper.moveFile(f,{
+            rr.res.body = await rr.helper.moveFile(f,{
                 path : imgpath,
             });
         }
         catch(err) {
             console.log(err);
-            rr.res.data = 'error';
+            rr.res.body = 'error';
         }
     } else {
-        rr.res.data = 'Error: file not found';
+        rr.res.body = 'Error: file not found';
     }
-});
+}, 'upload-image');
 
-aserv.daemon(2020);
+aserv.daemon(2021, 2);
