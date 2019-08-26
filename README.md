@@ -293,6 +293,7 @@ api.get('/what', async c => {
 
 ``` JavaScript
 var ctx = {
+    app: null,  //在运行时指向当前app环境，包括路由对象，config等。
     method      : '',       //请求方法类型
     url         : {
         host        : '',   //示例，w3xm.top或a.com:8119
