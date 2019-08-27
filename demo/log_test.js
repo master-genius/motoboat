@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const mt = require('../motoboat');
+const mt = require('../main');
 
 var app = new mt({
     //deny: ['127.0.0.1']
@@ -18,6 +18,8 @@ var app = new mt({
 });
 
 var {router} = app;
+
+app.service.router = router;
 
 router.get('/', async rr => {
     rr.res.body = 'success';
@@ -39,8 +41,7 @@ router.get('/end', async rr => {
     rr.response.end('end-test');
 });
 
-var quantum = router.group('quantum');
-quantum.get('/what', async c => {
+router.get('/q/what', async c => {
     try {
         c.res.body = await new Promise((rv, rj) => {
             fs.readFile('quantum', {encoding:'utf8'}, (err, data) => {
@@ -51,7 +52,7 @@ quantum.get('/what', async c => {
     } catch (err) {
         rr.res.body = err.message;
     }
-});
+},'@quantum');
 
 app.use(async (ctx, next) => {
     console.log('start timing');
@@ -67,8 +68,12 @@ app.use(async (ctx, next) => {
     console.log(' - BraveWang:');
 }, {method: 'GET'});
 
-quantum.get('/who', async c => {
+router.get('/q/who', async c => {
     c.res.body = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
+}, '@quantum');
+
+router.get('/r', async c => {
+    c.res.body = c.service.router.routeTable();
 });
 
 //测试路由，会抛出错误，只能添加async声明的函数。
