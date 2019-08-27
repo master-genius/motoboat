@@ -243,8 +243,8 @@ add支持第二个参数，如果没有表示全局执行，所有的请求都�
 
 * 字符串/字符串数组：表示针对哪个路由或哪些使用中间件。
 
-* JSON对象：{preg: PREG, group: GROUP, method: METHOD}，preg表示匹配规则，group表示组名称，method是请求类型，比如GET/POST，3个都是可选项，参考值如下：
-     * preg：字符串/字符串数组
+* JSON对象：{name: PREG, group: GROUP, method: METHOD}，name表示路由名称，group表示组名称，method是请求类型，比如GET/POST，3个都是可选项，参考值如下：
+     * name：字符串/字符串数组
      * group：字符串
      * method：字符串/字符串数组
 
@@ -253,47 +253,46 @@ add支持第二个参数，如果没有表示全局执行，所有的请求都�
 以下是一个更加复杂的示例：
 
 ``` JavaScript
-//分组名称如果没有最开始的/则会自动加上，并且会去掉末尾的/
-var api = router.group('/api');
 
 //只对api分组添加中间件
 serv.add(async (c, next) => {
     //...
-}, api.groupName);
+}, {group: 'api'});
 
-//只在api分组添加中间件，并且只有路由是/api/what时才会执行此中间件。
+//只在api分组添加中间件，并且只有路由名称是what时才会执行
 serv.add(async (c, next) => {
     //...
-}, {group: api.groupName, preg: `${api.groupName}/what`});
+}, {group: 'api', name: 'what'});
 
 router.get('/great', async c => {
   c.res.body += 'This test page for middleware';
-});
+}, '@api'); //设置路由分组名称是api
 
-api.get('/nice', async c => {
+router.get('/nice', async c => {
   c.res.body += 'This test page for middleware, group: '+c.group;
 });
 
-api.get('/what', async c => {
+router.get('/what', async c => {
   c.res.body += 'what?';
-});
+}, 'what'); //设置路由名称是what
 
 ```
+
+这些方式有点复杂了，其核心原则是为了通过名称和分组对接中间件和路由，这样就可以匹配执行，路由分组和名称可以单独管理，基于这样的机制，就可以实现一个简单的MVC机制的目录结构映射到路由，在titbit-loader扩展中已经提供了。
+
 >
 > * 中间件使用方式太灵活也容易导致错误，并且添加的顺序很重要。如果你想要按照你添加的顺序执行，而不是按照洋葱模型的逆序执行，可以使用辅助函数，传递一个中间件数组，逆序添加即可。
 > * 框架本身不是重量级的，所以对于复杂点的应用，往往需要自己建立目录结构。
 > * 依靠中间件的分组和匹配功能可以抽象出一个个组件化独立的应用，在example目录中给出了代码示例。
 > * 很多框架（不仅仅是Node.js范围内）提供的中间件机制就是全局的，不会涉及任何和分组以及匹配相关的功能，这样的话，无论是哪个路由，都要执行全部的中间件，而依靠分组和匹配可以只执行需要的，速度就会非常快，比如你添加了20个中间件，但是其中某个路由分组下只有2个，并且还有1个全局的，则只会执行这3个，其他的都不会涉及到。
-> * 如果你就想要简单的全局的，则只需要开启选项useMinMiddleware为true，在new motoboat的时候传递选项值。这会对接到最小中间件模式。这个时候会使用middleware-min.js模块，而不是middleware.js模块。
+> * 如果你就想要简单的全局的，则只需要不使用任何参数即可。
 >  
-
 
 
 ## 请求上下文
 
 ``` JavaScript
 var ctx = {
-    app: null,  //在运行时指向当前app环境，包括路由对象，config等。
     method      : '',       //请求方法类型
     url         : {
         host        : '',   //示例，w3xm.top或a.com:8119
@@ -371,6 +370,8 @@ var ctx = {
 
     //中间件如果需要注入一些对象或值，可以放在box中。
     box : {},
+
+    service: null, //在运行时指向app.service，具体内容由开发者设置。
 };
 
 //如果是上传文件会用到，用于获取文件。
