@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const mt = require('../motoboat');
+const mt = require('../main');
 
 var app = new mt({
     //deny: ['127.0.0.1']
@@ -15,21 +15,20 @@ var app = new mt({
     showLoadInfo: false,
     globalLog:true,
     logType: 'stdio',
-    useMinMiddleware: true,
 });
 
 var {router} = app;
 
 router.get('/', async rr => {
-    rr.res.data = 'success';
+    rr.res.body = 'success';
 });
 
 router.get('/name', async rr => {
-    rr.res.data = rr.param;
+    rr.res.body = rr.param;
 });
 
 router.post('/p', async rr => {
-    rr.res.data = rr.bodyparam;
+    rr.res.body = rr.body;
 });
 
 router.get('/wrong', async rr => {
@@ -38,21 +37,6 @@ router.get('/wrong', async rr => {
 
 router.get('/end', async rr => {
     rr.response.end('end-test');
-});
-
-var quantum = router.group('quantum');
-quantum.get('/what', async c => {
-    try {
-        c.res.data = await new Promise((rv, rj) => {
-            fs.readFile('quantum', {encoding:'utf8'}, (err, data) => {
-                if (err) {rj(err);}
-                rv(data);
-            });
-        });
-    } catch (err) {
-        rr.res.data = err.message;
-    }
-    //c.res.data = ['阿尔伯特·爱因斯坦','玻尔','薛订谔','海森伯', '狄拉克'];
 });
 
 app.add(async (ctx, next) => {
